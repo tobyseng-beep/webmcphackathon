@@ -179,7 +179,17 @@ select { font-size: .86rem; }
   font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .86rem;
 }
 .slider-name { font-weight: 700; }
-.slider-value { color: var(--accent); font-variant-numeric: tabular-nums; }
+.slider-value {
+  width: 5.25rem;
+  color: var(--accent);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .16rem .3rem;
+}
+.slider-value:focus { border-color: var(--accent); outline: none; }
 .slider-row input[type="range"] { width: 100%; margin: .3rem 0 0; accent-color: var(--accent); }
 .slider-bounds {
   display: flex; justify-content: space-between;

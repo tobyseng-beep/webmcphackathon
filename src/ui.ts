@@ -2,18 +2,34 @@
 // slider being animated by the agent stays smooth and a text box you are typing
 // in does not lose focus mid-word.
 
-import * as graph from './store.js';
+import * as graph from './store';
+import { mustQuery } from './dom';
+import type { Expression, MutationReason, Slider } from './types';
 
-const exprList = document.getElementById('expr-list');
-const sliderList = document.getElementById('slider-list');
-const emptyHint = document.getElementById('empty-hint');
+const exprList = mustQuery<HTMLDivElement>('#expr-list');
+const sliderList = mustQuery<HTMLDivElement>('#slider-list');
+const emptyHint = mustQuery<HTMLDivElement>('#empty-hint');
 
-const exprRows = new Map();
-const sliderRows = new Map();
+interface ExprRow {
+  row: HTMLDivElement;
+  swatch: HTMLButtonElement;
+  input: HTMLInputElement;
+  del: HTMLButtonElement;
+  error: HTMLDivElement;
+}
+interface SliderRow {
+  row: HTMLDivElement;
+  value: HTMLInputElement;
+  range: HTMLInputElement;
+  lo: HTMLSpanElement;
+  hi: HTMLSpanElement;
+}
+const exprRows = new Map<string, ExprRow>();
+const sliderRows = new Map<string, SliderRow>();
 
-let debounce;
+let debounce: ReturnType<typeof setTimeout> | undefined;
 
-function makeExprRow(expr) {
+function makeExprRow(expr: Expression): ExprRow {
   const row = document.createElement('div');
   row.className = 'expr-row';
 
@@ -37,7 +53,7 @@ function makeExprRow(expr) {
 
   swatch.addEventListener('click', () => {
     const current = graph.byId(expr.id);
-    graph.upsert(expr.id, { visible: !current.visible });
+    if (current) graph.upsert(expr.id, { visible: !current.visible });
   });
   input.addEventListener('input', () => {
     clearTimeout(debounce);
@@ -79,7 +95,7 @@ function renderExpressions() {
   emptyHint.hidden = expressions.length > 0;
 }
 
-function makeSliderRow(slider) {
+function makeSliderRow(slider: Slider): SliderRow {
   const row = document.createElement('div');
   row.className = 'slider-row';
 
@@ -88,8 +104,11 @@ function makeSliderRow(slider) {
   const name = document.createElement('span');
   name.className = 'slider-name';
   name.textContent = slider.name;
-  const value = document.createElement('span');
+  const value = document.createElement('input');
+  value.type = 'number';
   value.className = 'slider-value';
+  value.step = '0.01';
+  value.setAttribute('aria-label', `${slider.name} value`);
   top.append(name, value);
 
   const range = document.createElement('input');
@@ -102,6 +121,19 @@ function makeSliderRow(slider) {
   bounds.append(lo, hi);
 
   range.addEventListener('input', () => graph.setSlider(slider.name, Number(range.value)));
+  const commitValue = () => {
+    if (!Number.isFinite(value.valueAsNumber)) {
+      value.value = graph.getState().sliders.find((item) => item.name === slider.name)?.value.toFixed(2) ?? '';
+      return;
+    }
+    const rounded = Math.round((value.valueAsNumber + Number.EPSILON) * 100) / 100;
+    const result = graph.setSlider(slider.name, rounded);
+    if (result.ok) value.value = result.value.toFixed(2);
+  };
+  value.addEventListener('change', commitValue);
+  value.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') value.blur();
+  });
 
   row.append(top, range, bounds);
   return { row, value, range, lo, hi };
@@ -109,7 +141,7 @@ function makeSliderRow(slider) {
 
 function renderSliders() {
   const sliders = graph.getState().sliders;
-  const empty = sliderList.querySelector('.empty');
+  const empty = sliderList.querySelector<HTMLElement>('.empty');
   if (empty) empty.hidden = sliders.length > 0;
 
   const seen = new Set();
@@ -121,14 +153,15 @@ function renderSliders() {
       sliderRows.set(slider.name, parts);
       sliderList.append(parts.row);
     }
-    parts.range.min = slider.min;
-    parts.range.max = slider.max;
-    parts.range.step = slider.step;
-    if (document.activeElement !== parts.range) parts.range.value = slider.value;
-    else parts.range.value = slider.value;
-    parts.value.textContent = Number(slider.value).toFixed(2);
-    parts.lo.textContent = slider.min;
-    parts.hi.textContent = slider.max;
+    parts.range.min = String(slider.min);
+    parts.range.max = String(slider.max);
+    parts.range.step = String(slider.step);
+    parts.range.value = String(slider.value);
+    parts.value.min = String(slider.min);
+    parts.value.max = String(slider.max);
+    if (document.activeElement !== parts.value) parts.value.value = slider.value.toFixed(2);
+    parts.lo.textContent = String(slider.min);
+    parts.hi.textContent = String(slider.max);
   });
 
   for (const [name, parts] of sliderRows) {
@@ -138,12 +171,12 @@ function renderSliders() {
   }
 }
 
-export function renderAll(reason) {
+export function renderAll(reason?: MutationReason): void {
   if (reason === 'expressions' || reason === undefined) renderExpressions();
   renderSliders();
 }
 
-export function focusLastExpression() {
+export function focusLastExpression(): void {
   const expressions = graph.getState().expressions;
   const last = expressions[expressions.length - 1];
   if (last) exprRows.get(last.id)?.input.focus();

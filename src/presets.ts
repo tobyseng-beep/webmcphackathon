@@ -1,7 +1,9 @@
 // Lesson presets. These are the seam the Physics 1 / Physics 2 modes plug into
 // later: a preset is just an expression set plus slider ranges plus a viewport.
 
-export const PRESETS = {
+import type { Preset } from './types';
+
+export const PRESETS: Record<string, Preset> = {
   sine_family: {
     title: 'Transformations of a sine wave',
     mode: '2d',

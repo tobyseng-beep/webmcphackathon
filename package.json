@@ -1,0 +1,33 @@
+{
+  "name": "webmcphackathon",
+  "version": "1.0.0",
+  "description": "A graphing sandbox an AI agent can actually draw on.",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tobyseng-beep/webmcphackathon.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/tobyseng-beep/webmcphackathon/issues"
+  },
+  "homepage": "https://tobyseng-beep.github.io/webmcphackathon/",
+  "dependencies": {
+    "mathjs": "^15.2.0",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}

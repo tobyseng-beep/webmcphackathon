@@ -1,11 +1,20 @@
-// WebMCP surface. Every execute() below routes into src/store.js -- the same
+// WebMCP surface. Every execute() below routes into src/store.ts -- the same
 // functions the on-screen controls call. Descriptions are written as
 // instructions to a competent colleague, because the description string is the
 // only context the agent has when choosing a tool.
 
-import * as graph from './store.js';
-import { findFeatures } from './features.js';
-import { PRESETS, presetNames } from './presets.js';
+import * as graph from './store';
+import { findFeatures } from './features';
+import { PRESETS, presetNames } from './presets';
+import type {
+  BoardMode,
+  CameraState,
+  ExpressionPatch,
+  NumericScope,
+  SliderSpec,
+  Viewport,
+  WebMcpTool,
+} from './types';
 
 const summary = () => {
   const s = graph.getState();
@@ -21,7 +30,7 @@ const summary = () => {
   };
 };
 
-export const TOOLS = [
+const toolDefinitions = [
   {
     name: 'list_expressions',
     description:
@@ -33,7 +42,7 @@ export const TOOLS = [
   {
     name: 'add_expression',
     description:
-      'Plot a new expression and render it immediately. Accepts plain math ("y = a*x^2 + b") or LaTeX ("y = \\\\frac{x}{2}"). Understands four forms: y = f(x), x = g(y), z = f(x,y) for 3D surfaces, r = f(theta) for polar, and implicit equations such as x^2 + y^2 = 9. Any variable other than x, y, z, t, r and theta automatically becomes a slider the student can drag, so "y = a*sin(b*x)" creates sliders a and b in one call. If the expression does not parse, this returns ok:false with the parser error -- read it, fix the syntax, and call again rather than reporting failure to the student.',
+      'Plot a new expression and render it immediately. Accepts plain math ("y = a*x^2 + b") or LaTeX ("y = \\\\frac{x}{2}"). Understands four forms: y = f(x), x = g(y), z = f(x,y) for 3D surfaces, r = f(theta) for polar, and implicit equations such as x^2 + y^2 = 9. Free variables automatically become sliders while x, y, z and the polar coordinate theta do not, so "y = a*sin(b*x)" creates sliders a and b in one call. A slider is removed when its parameter no longer appears in any expression. If the expression does not parse, this returns ok:false with the parser error -- read it, fix the syntax, and call again rather than reporting failure to the student.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -43,7 +52,7 @@ export const TOOLS = [
       },
       required: ['latex'],
     },
-    execute: async ({ latex, id, color }) => {
+    execute: async ({ latex, id, color }: { latex: string; id?: string; color?: string }) => {
       const result = graph.upsert(id ?? null, { latex, color });
       return result.ok ? { ...result, ...summary() } : result;
     },
@@ -63,9 +72,9 @@ export const TOOLS = [
       },
       required: ['id'],
     },
-    execute: async ({ id, latex, color, visible }) => {
+    execute: async ({ id, latex, color, visible }: { id: string; latex?: string; color?: string; visible?: boolean }) => {
       if (!graph.byId(id)) return { ok: false, error: `No expression with id "${id}". Call list_expressions to see current ids.` };
-      const patch = {};
+      const patch: ExpressionPatch = {};
       if (latex !== undefined) patch.latex = latex;
       if (color !== undefined) patch.color = color;
       if (visible !== undefined) patch.visible = visible;
@@ -83,7 +92,7 @@ export const TOOLS = [
       properties: { id: { type: 'string', description: 'Id from list_expressions.' } },
       required: ['id'],
     },
-    execute: async ({ id }) => {
+    execute: async ({ id }: { id: string }) => {
       const result = graph.remove(id);
       return result.ok ? { ...result, ...summary() } : result;
     },
@@ -92,11 +101,11 @@ export const TOOLS = [
   {
     name: 'define_slider',
     description:
-      'Create a parameter the student can drag, or change the range of an existing one. Use this to introduce a variable deliberately before plotting with it, and to widen a range when a demonstration needs values the current range does not reach (animate_slider widens automatically, but a manual set_slider will clamp). Sliders are created automatically by add_expression, so you only need this to control the range, step or starting value.',
+      'Change the range, step or value of a parameter slider already used by an expression. Add the parameter to an expression first; sliders exist only while their parameter appears on the board. Use this to widen a range when a demonstration needs values the current range does not reach (animate_slider widens automatically, but a manual set_slider will clamp).',
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Parameter name. Cannot be x, y, z, t, r, theta, e or pi.' },
+        name: { type: 'string', description: 'Parameter name already present in an expression. Coordinates and reserved math values cannot be sliders.' },
         min: { type: 'number' },
         max: { type: 'number' },
         step: { type: 'number', description: 'Drag increment. Use 0.01 for smooth parameters, 1 for integer-valued ones.' },
@@ -104,7 +113,7 @@ export const TOOLS = [
       },
       required: ['name'],
     },
-    execute: async ({ name, min, max, step, value }) => {
+    execute: async ({ name, min, max, step, value }: SliderSpec & { name: string }) => {
       const result = graph.defineSlider(name, { min, max, step, value });
       return result.ok ? { ...result, ...summary() } : result;
     },
@@ -122,7 +131,7 @@ export const TOOLS = [
       },
       required: ['name', 'value'],
     },
-    execute: async ({ name, value }) => {
+    execute: async ({ name, value }: { name: string; value: number }) => {
       const result = graph.setSlider(name, value);
       return result.ok ? { ...result, ...summary() } : result;
     },
@@ -142,7 +151,7 @@ export const TOOLS = [
       },
       required: ['name', 'to'],
     },
-    execute: async ({ name, from, to, duration }) => {
+    execute: async ({ name, from, to, duration }: { name: string; from?: number; to: number; duration?: number }) => {
       const result = await graph.animateSlider(name, from, to, duration);
       return result.ok ? { ...result, ...summary() } : result;
     },
@@ -161,7 +170,7 @@ export const TOOLS = [
         zmax: { type: 'number', description: '3D only: clips the surface height.' },
       },
     },
-    execute: async (args) => {
+    execute: async (args: Partial<Viewport>) => {
       const result = graph.setViewport(args ?? {});
       return result.ok ? { ...result, ...summary() } : result;
     },
@@ -179,7 +188,7 @@ export const TOOLS = [
         distance: { type: 'number', description: 'Camera distance, 2 to 200. Around 34 frames a typical surface.' },
       },
     },
-    execute: async (args) => {
+    execute: async (args: Partial<CameraState>) => {
       const s = graph.getState();
       if (s.mode !== '3d') return { ok: false, error: 'The board is in 2D mode. Call set_mode with "3d" first.' };
       const result = graph.setCamera(args ?? {});
@@ -203,7 +212,7 @@ export const TOOLS = [
       },
       required: ['latex'],
     },
-    execute: async ({ latex, at }) => graph.evaluateAt(latex, at ?? {}),
+    execute: async ({ latex, at }: { latex: string; at?: NumericScope }) => graph.evaluateAt(latex, at ?? {}),
   },
 
   {
@@ -215,7 +224,7 @@ export const TOOLS = [
       properties: { id: { type: 'string', description: 'Expression id from list_expressions.' } },
       required: ['id'],
     },
-    execute: async ({ id }) => findFeatures(id),
+    execute: async ({ id }: { id: string }) => findFeatures(id),
   },
 
   {
@@ -232,7 +241,7 @@ export const TOOLS = [
       },
       required: ['x', 'y', 'text'],
     },
-    execute: async ({ x, y, z, text }) => graph.annotate({ x, y, z, text }),
+    execute: async ({ x, y, z, text }: { x: number; y: number; z?: number; text: string }) => graph.annotate({ x, y, z, text }),
   },
 
   {
@@ -245,7 +254,7 @@ export const TOOLS = [
         what: { type: 'string', enum: ['all', 'annotations'], description: 'Defaults to "annotations".' },
       },
     },
-    execute: async ({ what } = {}) => {
+    execute: async ({ what }: { what?: 'all' | 'annotations' } = {}) => {
       const result = what === 'all' ? graph.clearAll() : graph.clearAnnotations();
       return { ...result, ...summary() };
     },
@@ -260,7 +269,7 @@ export const TOOLS = [
       properties: { mode: { type: 'string', enum: ['2d', '3d'] } },
       required: ['mode'],
     },
-    execute: async ({ mode }) => {
+    execute: async ({ mode }: { mode: BoardMode }) => {
       const result = graph.setMode(mode);
       return result.ok ? { ...result, ...summary() } : result;
     },
@@ -280,7 +289,7 @@ export const TOOLS = [
         },
       },
     },
-    execute: async ({ name } = {}) => {
+    execute: async ({ name }: { name?: string } = {}) => {
       if (!name) return { ok: true, presets: presetNames(), note: 'Call again with one of these names.' };
       const preset = PRESETS[name];
       if (!preset) {
@@ -306,7 +315,12 @@ export const TOOLS = [
       };
     },
   },
-];
+] as const;
+
+// Each executor has a schema-specific argument type above. WebMCP itself
+// exposes a heterogeneous tool list, so erase only that argument distinction
+// at the registration boundary.
+export const TOOLS = toolDefinitions as unknown as WebMcpTool[];
 
 /**
  * Register every tool with the browser's WebMCP host.

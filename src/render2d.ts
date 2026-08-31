@@ -2,19 +2,25 @@
 // renders whatever the store holds, and routes pan/zoom back through
 // store.setViewport so the agent sees the same viewport the student does.
 
-import { getState, scope, setViewport } from './store.js';
+import { getState, scope, setViewport } from './store';
+import type { Expression } from './types';
 
-let canvas, ctx, dpr = 1;
+let canvas: HTMLCanvasElement;
+let ctx: CanvasRenderingContext2D;
+let dpr = 1;
+let wheelTimer: ReturnType<typeof setTimeout> | undefined;
 
-export function initRender2D(canvasEl) {
+export function initRender2D(canvasEl: HTMLCanvasElement): void {
   canvas = canvasEl;
-  ctx = canvas.getContext('2d');
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('2D canvas context is unavailable.');
+  ctx = context;
   attachInteraction();
   resize();
   window.addEventListener('resize', resize);
 }
 
-function resize() {
+function resize(): void {
   if (!canvas) return;
   dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -23,11 +29,24 @@ function resize() {
   draw();
 }
 
-function dims() {
+function dims(): { W: number; H: number } {
   return { W: canvas.width / dpr, H: canvas.height / dpr };
 }
 
-function transforms() {
+interface Transforms {
+  toPx: (x: number) => number;
+  toPy: (y: number) => number;
+  toX: (px: number) => number;
+  toY: (py: number) => number;
+  W: number;
+  H: number;
+  xmin: number;
+  xmax: number;
+  ymin: number;
+  ymax: number;
+}
+
+function transforms(): Transforms {
   const { xmin, xmax, ymin, ymax } = getState().viewport;
   const { W, H } = dims();
   return {
@@ -39,7 +58,7 @@ function transforms() {
   };
 }
 
-function niceStep(span, target) {
+function niceStep(span: number, target: number): number {
   const raw = span / target;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const norm = raw / mag;
@@ -47,12 +66,12 @@ function niceStep(span, target) {
   return mult * mag;
 }
 
-function fmt(v, step) {
+function fmt(v: number, step: number): string {
   const decimals = Math.max(0, -Math.floor(Math.log10(step)) + (step < 1 ? 0 : 0));
   return Math.abs(v) < step / 1000 ? '0' : v.toFixed(Math.min(6, decimals));
 }
 
-function drawGrid(t) {
+function drawGrid(t: Transforms): void {
   const { W, H, xmin, xmax, ymin, ymax, toPx, toPy } = t;
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#ffffff';
@@ -112,22 +131,26 @@ function drawGrid(t) {
   }
 }
 
-function evaluator(expr, varName) {
+function evaluator(expr: Expression, varName: string): (value: number) => number {
   const base = scope();
+  const fn = expr.fn;
+  if (!fn) return () => NaN;
   return (v) => {
     try {
       base[varName] = v;
-      const out = expr.fn.evaluate(base);
+      const out = fn.evaluate(base);
       return typeof out === 'number' ? out : Number(out);
     } catch { return NaN; }
   };
 }
 
-function strokePolyline(pts, t) {
+type Point = [number, number];
+
+function strokePolyline(pts: Array<Point | null>, t: Transforms): void {
   const { H } = t;
   ctx.beginPath();
   let drawing = false;
-  let prev = null;
+  let prev: Point | null = null;
   for (const p of pts) {
     if (!p) { drawing = false; prev = null; continue; }
     const [px, py] = p;
@@ -140,9 +163,9 @@ function strokePolyline(pts, t) {
   ctx.stroke();
 }
 
-function drawExplicitY(expr, t) {
+function drawExplicitY(expr: Expression, t: Transforms): void {
   const f = evaluator(expr, 'x');
-  const pts = [];
+  const pts: Array<Point | null> = [];
   const steps = Math.round(t.W * 2);
   for (let i = 0; i <= steps; i++) {
     const x = t.xmin + (i / steps) * (t.xmax - t.xmin);
@@ -152,9 +175,9 @@ function drawExplicitY(expr, t) {
   strokePolyline(pts, t);
 }
 
-function drawExplicitX(expr, t) {
+function drawExplicitX(expr: Expression, t: Transforms): void {
   const f = evaluator(expr, 'y');
-  const pts = [];
+  const pts: Array<Point | null> = [];
   const steps = Math.round(t.H * 2);
   for (let i = 0; i <= steps; i++) {
     const y = t.ymin + (i / steps) * (t.ymax - t.ymin);
@@ -162,7 +185,8 @@ function drawExplicitX(expr, t) {
     pts.push(Number.isFinite(x) ? [t.toPx(x), t.toPy(y)] : null);
   }
   ctx.beginPath();
-  let drawing = false, prev = null;
+  let drawing = false;
+  let prev: Point | null = null;
   for (const p of pts) {
     if (!p) { drawing = false; prev = null; continue; }
     if (prev && Math.abs(p[0] - prev[0]) > t.W * 1.5) { drawing = false; prev = null; }
@@ -172,11 +196,11 @@ function drawExplicitX(expr, t) {
   ctx.stroke();
 }
 
-function drawPolar(expr, t) {
+function drawPolar(expr: Expression, t: Transforms): void {
   const f = evaluator(expr, 'theta');
   const steps = 2000;
   const turns = 2;
-  const pts = [];
+  const pts: Array<Point | null> = [];
   for (let i = 0; i <= steps; i++) {
     const th = (i / steps) * turns * Math.PI * 2;
     const r = f(th);
@@ -193,24 +217,26 @@ function drawPolar(expr, t) {
 }
 
 // Marching squares over F(x,y)=0.
-function drawImplicit(expr, t, quality) {
+function drawImplicit(expr: Expression, t: Transforms, quality: number): void {
   const base = scope();
+  const fn = expr.fn;
+  if (!fn) return;
   const N = quality;
   const grid = new Float64Array((N + 1) * (N + 1));
-  const gx = (i) => t.xmin + (i / N) * (t.xmax - t.xmin);
-  const gy = (j) => t.ymin + (j / N) * (t.ymax - t.ymin);
+  const gx = (i: number) => t.xmin + (i / N) * (t.xmax - t.xmin);
+  const gy = (j: number) => t.ymin + (j / N) * (t.ymax - t.ymin);
 
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
       base.x = gx(i); base.y = gy(j);
-      let v;
-      try { v = expr.fn.evaluate(base); } catch { v = NaN; }
+      let v: unknown;
+      try { v = fn.evaluate(base); } catch { v = NaN; }
       grid[j * (N + 1) + i] = typeof v === 'number' ? v : NaN;
     }
   }
 
-  const at = (i, j) => grid[j * (N + 1) + i];
-  const lerp = (a, b, va, vb) => a + ((0 - va) / (vb - va)) * (b - a);
+  const at = (i: number, j: number) => grid[j * (N + 1) + i];
+  const lerp = (a: number, b: number, va: number, vb: number) => a + ((0 - va) / (vb - va)) * (b - a);
 
   ctx.beginPath();
   for (let j = 0; j < N; j++) {
@@ -218,8 +244,8 @@ function drawImplicit(expr, t, quality) {
       const v = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
       if (v.some((n) => !Number.isFinite(n))) continue;
       const x0 = gx(i), x1 = gx(i + 1), y0 = gy(j), y1 = gy(j + 1);
-      const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-      const pts = [];
+      const corners: Point[] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+      const pts: Point[] = [];
       for (let e = 0; e < 4; e++) {
         const a = e, b = (e + 1) % 4;
         if ((v[a] < 0) === (v[b] < 0)) continue;
@@ -235,18 +261,20 @@ function drawImplicit(expr, t, quality) {
   ctx.stroke();
 }
 
-function drawPoint(expr, t) {
+function drawPoint(expr: Expression, t: Transforms): void {
+  const fn = expr.fn;
+  if (!fn) return;
   try {
-    const val = expr.fn.evaluate(scope());
+    const val = fn.evaluate(scope());
     const arr = val && val.toArray ? val.toArray() : val;
-    const [x, y] = arr;
+    const [x, y] = arr as [unknown, unknown];
     ctx.beginPath();
     ctx.arc(t.toPx(Number(x)), t.toPy(Number(y)), 5, 0, Math.PI * 2);
     ctx.fill();
   } catch { /* not a plottable point */ }
 }
 
-function drawAnnotations(t) {
+function drawAnnotations(t: Transforms): void {
   const { annotations } = getState();
   ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
   ctx.textAlign = 'left';
@@ -285,7 +313,7 @@ function drawAnnotations(t) {
 
 let interacting = false;
 
-export function draw() {
+export function draw(): void {
   if (!ctx) return;
   const state = getState();
   if (state.mode !== '2d') return;
@@ -316,8 +344,9 @@ export function draw() {
   ctx.restore();
 }
 
-function attachInteraction() {
-  let dragging = false, last = null;
+function attachInteraction(): void {
+  let dragging = false;
+  let last: Point = [0, 0];
 
   canvas.addEventListener('pointerdown', (e) => {
     dragging = true; interacting = true; last = [e.offsetX, e.offsetY];
@@ -350,8 +379,8 @@ function attachInteraction() {
       ymin: cy + (t.ymin - cy) * factor,
       ymax: cy + (t.ymax - cy) * factor,
     });
-    clearTimeout(attachInteraction._t);
-    attachInteraction._t = setTimeout(() => { interacting = false; draw(); }, 160);
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => { interacting = false; draw(); }, 160);
   }, { passive: false });
 }
 

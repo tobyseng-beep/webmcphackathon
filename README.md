@@ -25,6 +25,9 @@ declares its tools, and whatever agent the student already uses can drive them.
 ## Try it
 
 The graph works on its own — type expressions, drag sliders, orbit the 3D surface.
+Parameters used by an expression appear automatically (excluding the coordinate
+variables `x`, `y` and `z`) and disappear when no expression uses them. Slider values
+can also be entered directly to two decimal places.
 To let an agent drive it, open the live URL in either:
 
 - **ChatGPT desktop**, in the in-app browser, or
@@ -47,9 +50,9 @@ with JSON arguments — same code path the agent uses.
 ## How WebMCP is implemented
 
 All 15 tools are registered on `document.modelContext` at page load
-([`src/tools.js`](src/tools.js)):
+([`src/tools.ts`](src/tools.ts)):
 
-```js
+```ts
 document.modelContext.registerTool({
   name: 'animate_slider',
   description:
@@ -121,19 +124,20 @@ the label exactly there.
 ## Architecture
 
 One rule: **every state change goes through the mutation layer in
-[`src/store.js`](src/store.js).** The sliders, the text boxes and the agent tools all
+[`src/store.ts`](src/store.ts).** The sliders, the text boxes and the agent tools all
 call the same functions. There is no separate agent path that could drift out of sync
 with what is on screen.
 
 ```
-src/store.js      state + every mutation (upsert, setSlider, animateSlider, setViewport…)
-src/tools.js      WebMCP tool definitions; each execute() calls into store.js
-src/features.js   numeric analysis behind find_features
-src/normalize.js  LaTeX-ish input -> math.js source (\frac, \sqrt, ^{}, |x| …)
-src/render2d.js   canvas renderer; pan/zoom writes back through setViewport
-src/render3d.js   three.js surfaces; mouse orbit writes back through setCamera
-src/ui.js         keyed DOM rows, updated in place so animation stays smooth
-src/main.js       wiring, activity log, tool inspector, registration
+src/types.ts      shared board, expression, result, preset and WebMCP types
+src/store.ts      state + every mutation (upsert, setSlider, animateSlider, setViewport…)
+src/tools.ts      WebMCP tool definitions; each execute() calls into store.ts
+src/features.ts   numeric analysis behind find_features
+src/normalize.ts  LaTeX-ish input -> math.js source (\frac, \sqrt, ^{}, |x| …)
+src/render2d.ts   canvas renderer; pan/zoom writes back through setViewport
+src/render3d.ts   three.js surfaces; mouse orbit writes back through setCamera
+src/ui.ts         keyed DOM rows, updated in place so animation stays smooth
+src/main.ts       wiring, activity log, tool inspector, registration
 ```
 
 The renderers are read-only consumers of state. Dragging the graph and calling
@@ -142,15 +146,26 @@ student actually is.
 
 ## Run locally
 
-No build step and no package manager — `math.js` and `three.js` are vendored in
-[`vendor/`](vendor/). Any static file server works:
+Install dependencies and start the Vite development server:
 
 ```bash
-python3 -m http.server 8777
+npm ci
+npm run dev
 ```
 
-Then open `http://localhost:8777`. Deploying is a matter of serving the directory;
-this repo is published with GitHub Pages from `main`.
+Vite prints the local URL (normally `http://localhost:5173`). Other useful commands:
+
+```bash
+npm run typecheck
+npm run build
+npm run preview
+```
+
+`mathjs` and `three` are npm dependencies. `npm run build` bundles the TypeScript
+app into `dist/` with a relative asset base, so it works at the existing
+`/webmcphackathon/` GitHub Pages project URL. A GitHub Actions workflow runs
+`npm ci`, typechecks, builds, uploads `dist/`, and deploys it to Pages on pushes to
+`main` (and can also be started manually).
 
 `probe.html` is a one-tool diagnostic page for checking whether a given browser exposes
 WebMCP at all.

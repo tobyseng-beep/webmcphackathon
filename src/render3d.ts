@@ -2,17 +2,23 @@
 // through store.setCamera, so `set_camera` and the user's drag are the same
 // operation -- the agent can always read back where the camera actually is.
 
-import * as THREE from '../vendor/three.module.js';
-import { getState, scope, setCamera } from './store.js';
+import * as THREE from 'three';
+import { getState, scope, setCamera } from './store';
+import type { Annotation, Expression, Viewport } from './types';
 
 const SPAN = 10; // world half-width; viewport is normalized into [-SPAN, SPAN]
 const GRID = 96;
 
-let renderer, sceneRoot, camera, container, labelLayer;
-let surfaces = new Map();
-let axesGroup, ready = false;
+let renderer: THREE.WebGLRenderer;
+let sceneRoot: THREE.Scene;
+let camera: THREE.PerspectiveCamera;
+let container: HTMLDivElement;
+let labelLayer: HTMLDivElement;
+const surfaces = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>>();
+let axesGroup: THREE.Group;
+let ready = false;
 
-export function initRender3D(containerEl, labelEl) {
+export function initRender3D(containerEl: HTMLDivElement, labelEl: HTMLDivElement): void {
   container = containerEl;
   labelLayer = labelEl;
 
@@ -41,7 +47,7 @@ export function initRender3D(containerEl, labelEl) {
   animate();
 }
 
-export function resize3D() {
+export function resize3D(): void {
   if (!renderer || !container) return;
   const rect = container.getBoundingClientRect();
   const w = Math.max(1, rect.width), h = Math.max(1, rect.height);
@@ -50,9 +56,9 @@ export function resize3D() {
   camera.updateProjectionMatrix();
 }
 
-function buildAxes() {
+function buildAxes(): void {
   axesGroup = new THREE.Group();
-  const mk = (a, b, color) => {
+  const mk = (a: THREE.Vector3, b: THREE.Vector3, color: THREE.ColorRepresentation) => {
     const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
     return new THREE.Line(geo, new THREE.LineBasicMaterial({ color }));
   };
@@ -69,9 +75,11 @@ function buildAxes() {
   sceneRoot.add(axesGroup);
 }
 
-function surfaceGeometry(expr, view) {
+function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry {
   const { xmin, xmax, ymin, ymax } = view;
   const base = scope();
+  const fn = expr.fn;
+  if (!fn) return new THREE.BufferGeometry();
   const N = GRID;
   const positions = new Float32Array((N + 1) * (N + 1) * 3);
   const colors = new Float32Array((N + 1) * (N + 1) * 3);
@@ -83,9 +91,9 @@ function surfaceGeometry(expr, view) {
       const x = xmin + (i / N) * (xmax - xmin);
       const y = ymin + (j / N) * (ymax - ymin);
       base.x = x; base.y = y;
-      let z;
-      try { z = expr.fn.evaluate(base); } catch { z = NaN; }
-      z = typeof z === 'number' ? z : Number(z);
+      let evaluated: unknown;
+      try { evaluated = fn.evaluate(base); } catch { evaluated = NaN; }
+      const z = typeof evaluated === 'number' ? evaluated : Number(evaluated);
       const k = j * (N + 1) + i;
       zs[k] = z;
       if (Number.isFinite(z)) { if (z < zlo) zlo = z; if (z > zhi) zhi = z; }
@@ -133,11 +141,11 @@ function surfaceGeometry(expr, view) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.setIndex(indices);
   geo.computeVertexNormals();
-  geo._zScale = zScale;
+  geo.userData.zScale = zScale;
   return geo;
 }
 
-export function rebuild() {
+export function rebuild(): void {
   if (!ready) return;
   const state = getState();
   const wanted = state.expressions.filter((e) => e.kind === 'explicit_z' && e.visible && !e.error);
@@ -156,20 +164,20 @@ export function rebuild() {
     if (existing) {
       existing.geometry.dispose();
       existing.geometry = geo;
-      existing.userData.zScale = geo._zScale;
+      existing.userData.zScale = geo.userData.zScale;
     } else {
       const mat = new THREE.MeshLambertMaterial({
         vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.96,
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.userData.zScale = geo._zScale;
+      mesh.userData.zScale = geo.userData.zScale;
       sceneRoot.add(mesh);
       surfaces.set(expr.id, mesh);
     }
   }
 }
 
-function applyCamera() {
+function applyCamera(): void {
   const { theta, phi, distance } = getState().camera;
   const th = (theta * Math.PI) / 180;
   const ph = (phi * Math.PI) / 180;
@@ -182,10 +190,11 @@ function applyCamera() {
   camera.lookAt(0, 0, 0);
 }
 
-function worldFor(note) {
+function worldFor(note: Annotation): THREE.Vector3 {
   const { xmin, xmax, ymin, ymax } = getState().viewport;
   const anySurface = surfaces.values().next().value;
-  const zScale = anySurface?.userData.zScale ?? 1;
+  const storedScale = anySurface?.userData.zScale;
+  const zScale = typeof storedScale === 'number' ? storedScale : 1;
   return new THREE.Vector3(
     -SPAN + ((note.x - xmin) / (xmax - xmin)) * SPAN * 2,
     -SPAN + ((note.y - ymin) / (ymax - ymin)) * SPAN * 2,
@@ -193,11 +202,11 @@ function worldFor(note) {
   );
 }
 
-function drawLabels() {
+function drawLabels(): void {
   if (!labelLayer) return;
   const state = getState();
   const notes = state.annotations;
-  while (labelLayer.children.length > notes.length) labelLayer.lastChild.remove();
+  while (labelLayer.children.length > notes.length) labelLayer.lastElementChild?.remove();
   while (labelLayer.children.length < notes.length) {
     const el = document.createElement('div');
     el.className = 'label3d';
@@ -205,7 +214,7 @@ function drawLabels() {
   }
   const rect = container.getBoundingClientRect();
   notes.forEach((note, i) => {
-    const el = labelLayer.children[i];
+    const el = labelLayer.children[i] as HTMLElement;
     const v = worldFor(note).project(camera);
     const behind = v.z > 1;
     el.textContent = note.text;
@@ -215,7 +224,7 @@ function drawLabels() {
   });
 }
 
-function animate() {
+function animate(): void {
   requestAnimationFrame(animate);
   if (getState().mode !== '3d' || !ready) return;
   applyCamera();
@@ -223,9 +232,10 @@ function animate() {
   drawLabels();
 }
 
-function attachInteraction() {
+function attachInteraction(): void {
   const el = renderer.domElement;
-  let dragging = false, last = null;
+  let dragging = false;
+  let last: [number, number] = [0, 0];
   el.addEventListener('pointerdown', (e) => {
     dragging = true; last = [e.clientX, e.clientY];
     el.setPointerCapture(e.pointerId);

@@ -2,14 +2,28 @@
 // functions -- there is no second code path. If you are adding a feature and
 // find yourself mutating `state` from outside this file, stop.
 
-import { normalize, splitEquation } from './normalize.js';
-
-const math = window.math;
+import * as math from 'mathjs';
+import type { MathNode, SymbolNode } from 'mathjs';
+import { normalize, splitEquation } from './normalize';
+import type {
+  Annotation,
+  BoardMode,
+  BoardState,
+  CameraState,
+  Expression,
+  ExpressionKind,
+  ExpressionPatch,
+  MutationReason,
+  NumericScope,
+  Result,
+  SliderSpec,
+  Viewport,
+} from './types';
 
 const PALETTE = ['#2d70b3', '#c74440', '#388c46', '#6042a6', '#fa7e19', '#000000'];
-const RESERVED = new Set(['x', 'y', 'z', 't', 'theta', 'r', 'e', 'pi', 'i', 'Infinity', 'NaN']);
+const RESERVED = new Set(['x', 'y', 'z', 'e', 'pi', 'i', 'Infinity', 'NaN']);
 
-const state = {
+const state: BoardState = {
   mode: '2d',
   expressions: [],
   sliders: [],
@@ -18,16 +32,21 @@ const state = {
   camera: { theta: 45, phi: 60, distance: 34 },
 };
 
-const listeners = new Set();
+type Listener = (reason: MutationReason, state: BoardState) => void;
+const listeners = new Set<Listener>();
 let idCounter = 0;
-const animations = new Map();
+interface RunningAnimation {
+  handle: number;
+  finish: (note?: string) => void;
+}
+const animations = new Map<string, RunningAnimation>();
 
-function notify(reason) {
+function notify(reason: MutationReason): void {
   for (const fn of listeners) fn(reason, state);
 }
 
-export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
-export function getState() { return state; }
+export function subscribe(fn: Listener): () => boolean { listeners.add(fn); return () => listeners.delete(fn); }
+export function getState(): BoardState { return state; }
 
 function nextId() { return 'e' + (++idCounter); }
 
@@ -35,22 +54,53 @@ function nextColor() {
   return PALETTE[state.expressions.length % PALETTE.length];
 }
 
-function freeVars(node) {
-  const names = new Set();
+function freeVars(node: MathNode): Set<string> {
+  const names = new Set<string>();
   node.traverse((n, path, parent) => {
-    if (!n.isSymbolNode) return;
-    if (parent && parent.isFunctionNode && path === 'fn') return;
-    if (typeof math[n.name] === 'function') return;
-    names.add(n.name);
+    if (n.type !== 'SymbolNode') return;
+    const symbol = n as SymbolNode;
+    if (parent?.type === 'FunctionNode' && path === 'fn') return;
+    if (typeof (math as unknown as Record<string, unknown>)[symbol.name] === 'function') return;
+    names.add(symbol.name);
   });
   return names;
+}
+
+function parameterNames(): string[] {
+  const names = new Set<string>();
+  for (const expression of state.expressions) {
+    for (const name of expression.vars) {
+      if (!RESERVED.has(name)) names.add(name);
+    }
+  }
+  return [...names];
+}
+
+function defaultSlider(name: string): import('./types').Slider {
+  return { name, min: -10, max: 10, step: 0.01, value: 1 };
+}
+
+function syncSlidersToExpressions(): string[] {
+  const names = parameterNames();
+  const existing = new Map(state.sliders.map((slider) => [slider.name, slider]));
+  const newSliders = names.filter((name) => !existing.has(name));
+  const retained = new Set(names);
+
+  for (const [name, animation] of animations) {
+    if (!retained.has(name)) {
+      animation.finish('The parameter was removed from every expression.');
+    }
+  }
+
+  state.sliders = names.map((name) => existing.get(name) ?? defaultSlider(name));
+  return newSliders;
 }
 
 const POINT_RE = /^\(\s*([^,()]+)\s*,\s*([^,()]+)\s*\)$/;
 
 // Decide what kind of object an input describes, and produce the expression(s)
 // that need compiling. Returns { kind, source, extra } or throws.
-function classify(src) {
+function classify(src: string): { kind: ExpressionKind; source: string } {
   const point = src.match(POINT_RE);
   if (point) return { kind: 'point', source: `[${point[1]}, ${point[2]}]` };
 
@@ -59,7 +109,7 @@ function classify(src) {
     return { kind: state.mode === '3d' ? 'explicit_z' : 'explicit_y', source: src };
   }
   const { lhs, rhs } = eq;
-  const bare = (v) => lhs === v;
+  const bare = (v: string) => lhs === v;
 
   if (bare('y') && !/\by\b/.test(rhs)) return { kind: 'explicit_y', source: rhs };
   if (bare('z')) return { kind: 'explicit_z', source: rhs };
@@ -68,7 +118,7 @@ function classify(src) {
   return { kind: 'implicit', source: `(${lhs}) - (${rhs})` };
 }
 
-function compile(src) {
+function compile(src: string) {
   const node = math.parse(src);
   const fn = node.compile();
   // Smoke-test the compile so bad calls surface as a parse error, not a
@@ -81,17 +131,17 @@ function compile(src) {
  * `update_expression` both call, and the same one the UI text boxes call.
  * Never throws -- returns { ok:false, error } so the agent can self-correct.
  */
-export function upsert(id, patch = {}) {
+export function upsert(id: string | null, patch: ExpressionPatch = {}): Result<{ id: string; kind: ExpressionKind; latex: string; new_sliders: string[] }> | { ok: false; id: string; error: string } {
   const existing = state.expressions.find((e) => e.id === id);
   const latex = patch.latex ?? existing?.latex ?? '';
   const targetId = id ?? nextId();
 
-  const record = {
+  const record: Expression = {
     id: targetId,
     latex,
     color: patch.color ?? existing?.color ?? nextColor(),
     visible: patch.visible ?? existing?.visible ?? true,
-    kind: null, fn: null, node: null, error: null, vars: [],
+    kind: 'empty', fn: null, node: null, error: null, vars: [],
   };
 
   if (!String(latex).trim()) {
@@ -105,9 +155,9 @@ export function upsert(id, patch = {}) {
       record.node = node;
       record.fn = fn;
       record.source = source;
-      record.vars = [...freeVars(node)];
+      record.vars = [...freeVars(node)].filter((name) => kind !== 'polar' || name !== 'theta');
     } catch (err) {
-      record.error = err.message;
+      record.error = err instanceof Error ? err.message : String(err);
       record.kind = 'error';
     }
   }
@@ -115,13 +165,7 @@ export function upsert(id, patch = {}) {
   const idx = state.expressions.findIndex((e) => e.id === targetId);
   if (idx === -1) state.expressions.push(record); else state.expressions[idx] = record;
 
-  const newSliders = [];
-  for (const name of record.vars) {
-    if (RESERVED.has(name)) continue;
-    if (state.sliders.some((s) => s.name === name)) continue;
-    defineSlider(name, {}, true);
-    newSliders.push(name);
-  }
+  const newSliders = syncSlidersToExpressions();
 
   notify('expressions');
 
@@ -131,15 +175,16 @@ export function upsert(id, patch = {}) {
   return { ok: true, id: targetId, kind: record.kind, latex, new_sliders: newSliders };
 }
 
-export function remove(id) {
+export function remove(id: string): Result<{ removed: { id: string; latex: string } }> {
   const idx = state.expressions.findIndex((e) => e.id === id);
   if (idx === -1) return { ok: false, error: `No expression with id "${id}". Call list_expressions to see current ids.` };
   const [gone] = state.expressions.splice(idx, 1);
+  syncSlidersToExpressions();
   notify('expressions');
   return { ok: true, removed: { id: gone.id, latex: gone.latex } };
 }
 
-export function clearAll() {
+export function clearAll(): Result {
   state.expressions = [];
   state.sliders = [];
   state.annotations = [];
@@ -154,9 +199,12 @@ export function list() {
   }));
 }
 
-export function defineSlider(name, spec = {}, quiet = false) {
+export function defineSlider(name: string, spec: SliderSpec = {}, quiet = false): Result<{ slider: import('./types').Slider }> {
   if (RESERVED.has(name)) {
-    return { ok: false, error: `"${name}" is a reserved variable (x, y, z, t, r, theta, e, pi) and cannot be a slider.` };
+    return { ok: false, error: `"${name}" is a coordinate or reserved value and cannot be a slider.` };
+  }
+  if (!parameterNames().includes(name)) {
+    return { ok: false, error: `No expression currently uses parameter "${name}". Add it to an expression first.` };
   }
   const existing = state.sliders.find((s) => s.name === name);
   const slider = {
@@ -176,7 +224,7 @@ export function defineSlider(name, spec = {}, quiet = false) {
   return { ok: true, slider: { ...slider } };
 }
 
-export function setSlider(name, value) {
+export function setSlider(name: string, value: number): Result<{ name: string; value: number; clamped: boolean }> {
   const slider = state.sliders.find((s) => s.name === name);
   if (!slider) {
     return { ok: false, error: `No slider named "${name}". Existing sliders: ${state.sliders.map((s) => s.name).join(', ') || '(none)'}. Use define_slider to create it.` };
@@ -187,14 +235,14 @@ export function setSlider(name, value) {
   return { ok: true, name, value: clamped, clamped: clamped !== Number(value) };
 }
 
-export function scope() {
-  const s = {};
+export function scope(): NumericScope {
+  const s: NumericScope = {};
   for (const slider of state.sliders) s[slider.name] = slider.value;
   return s;
 }
 
 /** Animate a slider from -> to, driving the real on-screen control. */
-export function animateSlider(name, from, to, duration = 1500) {
+export function animateSlider(name: string, from: number | undefined, to: number, duration = 1500): Promise<Result<{ name: string; from: number; to: number; duration_ms: number; note?: string }>> {
   const slider = state.sliders.find((s) => s.name === name);
   if (!slider) {
     return Promise.resolve({ ok: false, error: `No slider named "${name}". Use define_slider first.` });
@@ -214,7 +262,7 @@ export function animateSlider(name, from, to, duration = 1500) {
 
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (note) => {
+    const finish = (note?: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(watchdog);
@@ -225,7 +273,7 @@ export function animateSlider(name, from, to, duration = 1500) {
       resolve({ ok: true, name, from: start, to: end, duration_ms: ms, ...(note ? { note } : {}) });
     };
 
-    const tick = (now) => {
+    const tick = (now: number) => {
       const p = Math.min(1, (now - t0) / ms);
       const eased = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
       slider.value = start + (end - start) * eased;
@@ -246,7 +294,7 @@ export function animateSlider(name, from, to, duration = 1500) {
   });
 }
 
-export function setViewport(patch) {
+export function setViewport(patch: Partial<Viewport>): Result<{ viewport: Viewport }> {
   const v = { ...state.viewport, ...patch };
   if (v.xmin >= v.xmax || v.ymin >= v.ymax) {
     return { ok: false, error: 'Viewport requires xmin < xmax and ymin < ymax.' };
@@ -256,7 +304,7 @@ export function setViewport(patch) {
   return { ok: true, viewport: { ...v } };
 }
 
-export function setCamera(patch) {
+export function setCamera(patch: Partial<CameraState>): Result<{ camera: CameraState }> {
   const c = { ...state.camera, ...patch };
   c.phi = Math.min(179, Math.max(1, c.phi));
   c.distance = Math.min(200, Math.max(2, c.distance));
@@ -265,15 +313,15 @@ export function setCamera(patch) {
   return { ok: true, camera: { ...c } };
 }
 
-export function setMode(mode) {
+export function setMode(mode: BoardMode): Result<{ mode: BoardMode }> {
   if (mode !== '2d' && mode !== '3d') return { ok: false, error: 'mode must be "2d" or "3d".' };
   state.mode = mode;
   notify('mode');
   return { ok: true, mode };
 }
 
-export function annotate({ x, y, z, text }) {
-  const note = { id: 'a' + (++idCounter), x: Number(x), y: Number(y), z: z == null ? null : Number(z), text: String(text) };
+export function annotate({ x, y, z, text }: { x: number; y: number; z?: number; text: string }): Result<{ annotation: Annotation }> {
+  const note: Annotation = { id: 'a' + (++idCounter), x: Number(x), y: Number(y), z: z == null ? null : Number(z), text: String(text) };
   state.annotations.push(note);
   notify('annotations');
   return { ok: true, annotation: note };
@@ -285,7 +333,7 @@ export function clearAnnotations() {
   return { ok: true };
 }
 
-export function evaluateAt(latex, at = {}) {
+export function evaluateAt(latex: string, at: NumericScope = {}): Result<{ value: number | null; note?: string }> {
   try {
     const src = normalize(latex);
     const eq = splitEquation(src);
@@ -296,9 +344,9 @@ export function evaluateAt(latex, at = {}) {
     if (!Number.isFinite(num)) return { ok: true, value: null, note: 'undefined or non-finite at that point' };
     return { ok: true, value: num };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-export function byId(id) { return state.expressions.find((e) => e.id === id); }
+export function byId(id: string): Expression | undefined { return state.expressions.find((e) => e.id === id); }
 export { RESERVED, PALETTE };

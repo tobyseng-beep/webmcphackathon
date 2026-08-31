@@ -2,22 +2,37 @@
 // agent gets real coordinates to reason about instead of guessing from the
 // shape of the algebra.
 
-import { getState, scope, byId } from './store.js';
+import { getState, scope, byId } from './store';
+import type { Expression, NumericScope, Result } from './types';
 
-const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+type Sample = (value: number) => number;
+type FeatureType =
+  | 'root' | 'asymptote' | 'minimum' | 'maximum' | 'y_intercept'
+  | 'intersection' | 'saddle';
+interface Feature {
+  type: FeatureType;
+  x: number;
+  y: number | null;
+  z?: number;
+  with?: string;
+}
 
-function sampler(expr, varName, extra = {}) {
-  const base = { ...scope(), ...extra };
-  return (v) => {
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+function sampler(expr: Expression, varName: string, extra: NumericScope = {}): Sample {
+  const base: NumericScope = { ...scope(), ...extra };
+  const fn = expr.fn;
+  if (!fn) return () => NaN;
+  return (v: number) => {
     try {
       base[varName] = v;
-      const out = expr.fn.evaluate(base);
+      const out = fn.evaluate(base);
       return typeof out === 'number' ? out : Number(out);
     } catch { return NaN; }
   };
 }
 
-function bisect(f, a, b, iters = 80) {
+function bisect(f: Sample, a: number, b: number, iters = 80): number {
   let fa = f(a);
   for (let i = 0; i < iters; i++) {
     const m = (a + b) / 2;
@@ -30,38 +45,38 @@ function bisect(f, a, b, iters = 80) {
 
 // A sign change across a pole looks like a root but isn't. Reject crossings
 // where the function is large on both sides of a tiny bracket.
-function isPole(f, x, h) {
+function isPole(f: Sample, x: number, h: number): boolean {
   const l = Math.abs(f(x - h)), r = Math.abs(f(x + h));
   return !finite(l) || !finite(r) || (l > 1e4 && r > 1e4);
 }
 
-function dedupe(points, tol) {
-  const out = [];
+function dedupe(points: Feature[], tol: number): Feature[] {
+  const out: Feature[] = [];
   for (const p of points.sort((a, b) => a.x - b.x)) {
     if (!out.some((q) => Math.abs(q.x - p.x) < tol && q.type === p.type)) out.push(p);
   }
   return out;
 }
 
-function features1D(expr, varName = 'x') {
+function features1D(expr: Expression, varName = 'x'): Feature[] {
   const { xmin, xmax } = getState().viewport;
   const f = sampler(expr, varName);
   const N = 2000;
   const dx = (xmax - xmin) / N;
   const h = (xmax - xmin) / 1e5;
-  const df = (x) => {
+  const df = (x: number) => {
     const a = f(x - h), b = f(x + h);
     return finite(a) && finite(b) ? (b - a) / (2 * h) : NaN;
   };
 
-  const roots = [];
-  const extrema = [];
-  const poles = [];
+  const roots: Feature[] = [];
+  const extrema: Feature[] = [];
+  const poles: Feature[] = [];
 
   // A bracketed sign change is either a root or a pole. Rather than guessing
   // from magnitude, bisect and look at what we landed on: a real root drives
   // |f| to ~0, a pole does not.
-  const classifyCrossing = (a, b) => {
+  const classifyCrossing = (a: number, b: number) => {
     const r = bisect(f, a, b);
     if (Math.abs(f(r)) < 1e-6) roots.push({ type: 'root', x: +r.toFixed(6), y: 0 });
     else poles.push({ type: 'asymptote', x: +r.toFixed(6), y: null });
@@ -70,10 +85,10 @@ function features1D(expr, varName = 'x') {
   // Only accept a turning point that actually turns: strictly higher (or
   // lower) than both neighbours. This rejects the spurious extremum the
   // numeric derivative invents on either side of a pole.
-  const pushExtremum = (e) => {
+  const pushExtremum = (e: number) => {
     const ey = f(e), left = f(e - dx), right = f(e + dx);
     if (![ey, left, right].every(finite)) return;
-    const type = left > ey && right > ey ? 'minimum'
+    const type: FeatureType | null = left > ey && right > ey ? 'minimum'
       : left < ey && right < ey ? 'maximum'
       : null;
     if (!type) return;
@@ -82,7 +97,7 @@ function features1D(expr, varName = 'x') {
 
   // Distinguish a vertical asymptote from the edge of a domain (sqrt(x) at 0)
   // by walking geometrically closer and watching whether |f| runs away.
-  const blowsUp = (x, dir) => {
+  const blowsUp = (x: number, dir: number) => {
     const first = Math.abs(f(x + dir * dx / 2));
     let last = first;
     for (let k = 2; k <= 8; k++) {
@@ -128,16 +143,16 @@ function features1D(expr, varName = 'x') {
   return out;
 }
 
-function intersections(expr, others) {
+function intersections(expr: Expression, others: Expression[]): Feature[] {
   const { xmin, xmax } = getState().viewport;
   const f = sampler(expr, 'x');
-  const found = [];
+  const found: Feature[] = [];
   const N = 1500;
   const dx = (xmax - xmin) / N;
 
   for (const other of others) {
     const g = sampler(other, 'x');
-    const diff = (x) => f(x) - g(x);
+    const diff = (x: number) => f(x) - g(x);
     let prevX = xmin, prevD = diff(xmin);
     for (let i = 1; i <= N; i++) {
       const x = xmin + i * dx;
@@ -162,24 +177,26 @@ function intersections(expr, others) {
 
 // Critical points of z = f(x,y): where the gradient vanishes. Classified by the
 // Hessian determinant so the agent can say "saddle" and mean it.
-function features2D(expr) {
+function features2D(expr: Expression): Feature[] {
   const { xmin, xmax, ymin, ymax } = getState().viewport;
   const base = { ...scope() };
-  const f = (x, y) => {
+  const fn = expr.fn;
+  if (!fn) return [];
+  const f = (x: number, y: number) => {
     try {
       base.x = x; base.y = y;
-      const out = expr.fn.evaluate(base);
+      const out = fn.evaluate(base);
       return typeof out === 'number' ? out : Number(out);
     } catch { return NaN; }
   };
   const h = Math.min(xmax - xmin, ymax - ymin) / 1e4;
-  const fx = (x, y) => (f(x + h, y) - f(x - h, y)) / (2 * h);
-  const fy = (x, y) => (f(x, y + h) - f(x, y - h)) / (2 * h);
-  const fxx = (x, y) => (f(x + h, y) - 2 * f(x, y) + f(x - h, y)) / (h * h);
-  const fyy = (x, y) => (f(x, y + h) - 2 * f(x, y) + f(x, y - h)) / (h * h);
-  const fxy = (x, y) => (f(x + h, y + h) - f(x + h, y - h) - f(x - h, y + h) + f(x - h, y - h)) / (4 * h * h);
+  const fx = (x: number, y: number) => (f(x + h, y) - f(x - h, y)) / (2 * h);
+  const fy = (x: number, y: number) => (f(x, y + h) - f(x, y - h)) / (2 * h);
+  const fxx = (x: number, y: number) => (f(x + h, y) - 2 * f(x, y) + f(x - h, y)) / (h * h);
+  const fyy = (x: number, y: number) => (f(x, y + h) - 2 * f(x, y) + f(x, y - h)) / (h * h);
+  const fxy = (x: number, y: number) => (f(x + h, y + h) - f(x + h, y - h) - f(x - h, y + h) + f(x - h, y - h)) / (4 * h * h);
 
-  const found = [];
+  const found: Feature[] = [];
   const G = 40;
   const stepX = (xmax - xmin) / G, stepY = (ymax - ymin) / G;
 
@@ -204,7 +221,7 @@ function features2D(expr) {
       }
       if (!converged) continue;
       if (x < xmin || x > xmax || y < ymin || y > ymax) continue;
-      if (found.some((p) => Math.hypot(p.x - x, p.y - y) < Math.max(stepX, stepY) / 2)) continue;
+      if (found.some((p) => p.y !== null && Math.hypot(p.x - x, p.y - y) < Math.max(stepX, stepY) / 2)) continue;
 
       const a = fxx(x, y), b = fxy(x, y), d = fyy(x, y);
       const det = a * d - b * b;
@@ -219,7 +236,13 @@ function features2D(expr) {
   return found;
 }
 
-export function findFeatures(id) {
+export function findFeatures(id: string): Result<{
+  id: string;
+  kind: string;
+  searched_region: Record<string, number>;
+  features: Feature[];
+  note: string;
+}> {
   const expr = byId(id);
   if (!expr) {
     return { ok: false, error: `No expression with id "${id}". Call list_expressions first.` };

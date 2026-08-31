@@ -7,13 +7,13 @@ const GREEK = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'the
   'upsilon', 'phi', 'chi', 'psi', 'omega', 'pi'];
 
 // Desmos conventions: log is base 10, ln is natural.
-const FUNC_ALIASES = {
+const FUNC_ALIASES: Record<string, string> = {
   arcsin: 'asin', arccos: 'acos', arctan: 'atan',
   arcsinh: 'asinh', arccosh: 'acosh', arctanh: 'atanh',
   ln: 'log', log: 'log10',
 };
 
-function matchBrace(s, open) {
+function matchBrace(s: string, open: number): number {
   let depth = 0;
   for (let i = open; i < s.length; i++) {
     if (s[i] === '{') depth++;
@@ -23,7 +23,7 @@ function matchBrace(s, open) {
 }
 
 // \frac{A}{B} -> ((A)/(B)), innermost-first so nesting works.
-function expandFrac(s) {
+function expandFrac(s: string): string {
   for (let guard = 0; guard < 100; guard++) {
     const i = s.lastIndexOf('\\frac{');
     if (i === -1) break;
@@ -41,12 +41,12 @@ function expandFrac(s) {
 }
 
 // \sqrt[n]{A} -> nthRoot(A,n) ; \sqrt{A} -> sqrt(A)
-function expandSqrt(s) {
+function expandSqrt(s: string): string {
   for (let guard = 0; guard < 100; guard++) {
     const i = s.lastIndexOf('\\sqrt');
     if (i === -1) break;
     let j = i + 5;
-    let index = null;
+    let index: string | null = null;
     if (s[j] === '[') {
       const close = s.indexOf(']', j);
       if (close === -1) break;
@@ -64,7 +64,7 @@ function expandSqrt(s) {
 }
 
 // ^{...} -> ^(...)
-function expandSuperscript(s) {
+function expandSuperscript(s: string): string {
   for (let guard = 0; guard < 100; guard++) {
     const i = s.indexOf('^{');
     if (i === -1) break;
@@ -76,7 +76,7 @@ function expandSuperscript(s) {
 }
 
 // a_{1} -> a_1  (math.js accepts underscores inside symbol names)
-function expandSubscript(s) {
+function expandSubscript(s: string): string {
   for (let guard = 0; guard < 100; guard++) {
     const i = s.indexOf('_{');
     if (i === -1) break;
@@ -88,7 +88,7 @@ function expandSubscript(s) {
 }
 
 // |expr| -> abs(expr), alternating open/close.
-function expandAbs(s) {
+function expandAbs(s: string): string {
   let out = '';
   let open = false;
   for (const ch of s) {
@@ -98,7 +98,7 @@ function expandAbs(s) {
   return open ? out + ')' : out;
 }
 
-export function normalize(input) {
+export function normalize(input: unknown): string {
   let s = String(input ?? '').trim();
   if (!s) return s;
 
@@ -131,7 +131,7 @@ export function normalize(input) {
 export const GREEK_NAMES = GREEK;
 
 // Split on a top-level '=' that is not part of ==, <=, >=, !=.
-export function splitEquation(s) {
+export function splitEquation(s: string): { lhs: string; rhs: string } | null {
   let depth = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];

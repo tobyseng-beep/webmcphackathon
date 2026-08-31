@@ -2,25 +2,27 @@
 // tool call into the on-screen activity log so a spectator can see what the
 // agent is doing to the board.
 
-import * as graph from './store.js';
-import { TOOLS, registerTools } from './tools.js';
-import { PRESETS } from './presets.js';
-import { initRender2D, draw as draw2D, resize2D } from './render2d.js';
-import { initRender3D, rebuild as rebuild3D, resize3D } from './render3d.js';
-import { renderAll, focusLastExpression } from './ui.js';
+import * as graph from './store';
+import { TOOLS, registerTools } from './tools';
+import { PRESETS } from './presets';
+import { initRender2D, draw as draw2D, resize2D } from './render2d';
+import { initRender3D, rebuild as rebuild3D, resize3D } from './render3d';
+import { renderAll, focusLastExpression } from './ui';
+import { mustQuery } from './dom';
 
-const canvas2d = document.getElementById('canvas2d');
-const stage3d = document.getElementById('stage3d');
-const labels3d = document.getElementById('labels3d');
-const logEl = document.getElementById('log');
-const badge = document.getElementById('mcp-badge');
-const badgeText = document.getElementById('mcp-text');
+const canvas2d = mustQuery<HTMLCanvasElement>('#canvas2d');
+const stage3d = mustQuery<HTMLDivElement>('#stage3d');
+const labels3d = mustQuery<HTMLDivElement>('#labels3d');
+const logEl = mustQuery<HTMLDivElement>('#log');
+const badge = mustQuery<HTMLDivElement>('#mcp-badge');
+const badgeText = mustQuery<HTMLSpanElement>('#mcp-text');
 
 /* ---------- activity log ---------- */
 
-let callSource = null;
+type CallSource = 'you' | 'agent';
+let callSource: CallSource | null = null;
 
-function logCall(name, args, source) {
+function logCall(name: string, args: Record<string, unknown>, source: CallSource): HTMLDivElement {
   const empty = logEl.querySelector('.empty');
   if (empty) empty.remove();
 
@@ -43,7 +45,7 @@ function logCall(name, args, source) {
 
   entry.append(title, argsEl);
   logEl.prepend(entry);
-  while (logEl.children.length > 60) logEl.lastChild.remove();
+  while (logEl.children.length > 60) logEl.lastElementChild?.remove();
   return entry;
 }
 
@@ -56,16 +58,21 @@ for (const tool of TOOLS) {
     const entry = logCall(tool.name, args, source);
     try {
       const result = await inner(args ?? {});
-      if (result && result.ok === false) entry.classList.add('fail');
+      if (
+        result &&
+        typeof result === 'object' &&
+        'ok' in result &&
+        result.ok === false
+      ) entry.classList.add('fail');
       return result;
     } catch (err) {
       entry.classList.add('fail');
-      return { ok: false, error: String(err && err.message ? err.message : err) };
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   };
 }
 
-async function runTool(name, args, source = 'you') {
+async function runTool(name: string, args: Record<string, unknown>, source: CallSource = 'you'): Promise<unknown> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return { ok: false, error: `No tool named ${name}` };
   callSource = source;
@@ -73,7 +80,7 @@ async function runTool(name, args, source = 'you') {
   finally { callSource = null; }
 }
 
-document.getElementById('clear-log').addEventListener('click', () => {
+mustQuery<HTMLButtonElement>('#clear-log').addEventListener('click', () => {
   logEl.innerHTML = '<p class="empty">Tool calls from the agent appear here as they arrive.</p>';
 });
 
@@ -82,15 +89,15 @@ document.getElementById('clear-log').addEventListener('click', () => {
 initRender2D(canvas2d);
 initRender3D(stage3d, labels3d);
 
-function applyMode() {
+function applyMode(): void {
   const mode = graph.getState().mode;
   const is3d = mode === '3d';
   canvas2d.hidden = is3d;
   stage3d.hidden = !is3d;
-  document.getElementById('mode-2d').classList.toggle('active', !is3d);
-  document.getElementById('mode-3d').classList.toggle('active', is3d);
-  document.getElementById('mode-2d').setAttribute('aria-selected', String(!is3d));
-  document.getElementById('mode-3d').setAttribute('aria-selected', String(is3d));
+  mustQuery<HTMLButtonElement>('#mode-2d').classList.toggle('active', !is3d);
+  mustQuery<HTMLButtonElement>('#mode-3d').classList.toggle('active', is3d);
+  mustQuery<HTMLButtonElement>('#mode-2d').setAttribute('aria-selected', String(!is3d));
+  mustQuery<HTMLButtonElement>('#mode-3d').setAttribute('aria-selected', String(is3d));
   if (is3d) { resize3D(); rebuild3D(); } else { resize2D(); }
 }
 
@@ -104,17 +111,17 @@ graph.subscribe((reason) => {
   }
 });
 
-document.getElementById('mode-2d').addEventListener('click', () => graph.setMode('2d'));
-document.getElementById('mode-3d').addEventListener('click', () => graph.setMode('3d'));
+mustQuery<HTMLButtonElement>('#mode-2d').addEventListener('click', () => graph.setMode('2d'));
+mustQuery<HTMLButtonElement>('#mode-3d').addEventListener('click', () => graph.setMode('3d'));
 
-document.getElementById('add-expr').addEventListener('click', () => {
+mustQuery<HTMLButtonElement>('#add-expr').addEventListener('click', () => {
   graph.upsert(null, { latex: '' });
   focusLastExpression();
 });
 
 /* ---------- presets ---------- */
 
-const presetSelect = document.getElementById('preset-select');
+const presetSelect = mustQuery<HTMLSelectElement>('#preset-select');
 for (const [name, preset] of Object.entries(PRESETS)) {
   const option = document.createElement('option');
   option.value = name;
@@ -129,10 +136,10 @@ presetSelect.addEventListener('change', async () => {
 
 /* ---------- tool inspector ---------- */
 
-const toolSelect = document.getElementById('tool-select');
-const toolDesc = document.getElementById('tool-desc');
-const toolArgs = document.getElementById('tool-args');
-const toolResult = document.getElementById('tool-result');
+const toolSelect = mustQuery<HTMLSelectElement>('#tool-select');
+const toolDesc = mustQuery<HTMLParagraphElement>('#tool-desc');
+const toolArgs = mustQuery<HTMLTextAreaElement>('#tool-args');
+const toolResult = mustQuery<HTMLPreElement>('#tool-result');
 
 for (const tool of TOOLS) {
   const option = document.createElement('option');
@@ -141,14 +148,14 @@ for (const tool of TOOLS) {
   toolSelect.append(option);
 }
 
-function describeTool() {
+function describeTool(): void {
   const tool = TOOLS.find((t) => t.name === toolSelect.value);
   if (!tool) return;
   const first = tool.description.split('. ')[0];
   toolDesc.textContent = first.endsWith('.') ? first : first + '.';
   const props = tool.inputSchema?.properties ?? {};
   const required = tool.inputSchema?.required ?? [];
-  const sample = {};
+  const sample: Record<string, unknown> = {};
   for (const key of Object.keys(props)) {
     if (!required.includes(key)) continue;
     const type = props[key].type;
@@ -159,12 +166,17 @@ function describeTool() {
 toolSelect.addEventListener('change', describeTool);
 describeTool();
 
-document.getElementById('tool-run').addEventListener('click', async () => {
-  let args;
+mustQuery<HTMLButtonElement>('#tool-run').addEventListener('click', async () => {
+  let args: Record<string, unknown>;
   try {
-    args = JSON.parse(toolArgs.value || '{}');
+    const parsed: unknown = JSON.parse(toolArgs.value || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Arguments must be a JSON object.');
+    }
+    args = parsed as Record<string, unknown>;
   } catch (err) {
-    toolResult.textContent = 'Arguments are not valid JSON: ' + err.message;
+    toolResult.textContent = 'Arguments are not valid JSON: ' +
+      (err instanceof Error ? err.message : String(err));
     return;
   }
   const result = await runTool(toolSelect.value, args, 'you');
