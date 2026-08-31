@@ -24,6 +24,14 @@ declares its tools, and whatever agent the student already uses can drive them.
 
 ## Try it
 
+The live URL opens a menu of learning tools. **2D** and **3D** open the grapher
+(`graph.html?mode=2d` / `?mode=3d`); **Circuits** and **Physics** are marked coming soon
+because they are not built yet, and say which 2D lesson covers the topic today. The
+grapher's logo links back to the menu.
+
+The menu registers two tools of its own — `list_learning_tools` and `open_tool` — so an
+agent can open the right board before the student has clicked anything.
+
 The graph works on its own — type expressions, drag sliders, orbit the 3D surface.
 Parameters used by an expression appear automatically (excluding the coordinate
 variables `x`, `y` and `z`) and disappear when no expression uses them. Slider values
@@ -129,6 +137,9 @@ call the same functions. There is no separate agent path that could drift out of
 with what is on screen.
 
 ```
+index.html        the Explore menu; src/menu.ts scatters the equations and
+                  registers list_learning_tools + open_tool
+graph.html        the grapher itself; reads ?mode=2d|3d to pick the opening board
 src/types.ts      shared board, expression, result, preset and WebMCP types
 src/store.ts      state + every mutation (upsert, setSlider, animateSlider, setViewport…)
 src/tools.ts      WebMCP tool definitions; each execute() calls into store.ts

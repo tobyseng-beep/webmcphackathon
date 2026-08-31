@@ -2,7 +2,7 @@
 
 ## Inspection / elevator pitch
 
-Chalkboard is a graphing sandbox an AI agent can actually draw on. Instead of describing
+Smarterboard is a graphing sandbox an AI agent can actually draw on. Instead of describing
 math in prose, the agent grabs the sliders, zooms the viewport and pins labels to the
 curve while it explains — so the explanation and the artifact are the same object.
 
@@ -60,7 +60,11 @@ query.
 
 ## How WebMCP was implemented
 
-15 tools are registered on `document.modelContext` at page load (`src/tools.js`).
+15 tools are registered on `document.modelContext` on the grapher (`src/tools.ts`), and the
+Explore menu registers two more (`list_learning_tools`, `open_tool`) so the site's front
+door is not a WebMCP dead zone — an agent can open the right board before the student has
+clicked anything, and asking for a tool that is not built yet returns a pointer to the
+lesson that covers the topic today rather than a flat refusal.
 
 The architectural rule the whole project is built on: **every state change goes through a
 single mutation layer** (`src/store.js`). The sliders, the text boxes and the agent tools
@@ -89,7 +93,7 @@ classify a critical point on a surface as a saddle.
 
 ## Built with
 
-JavaScript (no framework, no build step), WebMCP (`document.modelContext`), math.js,
+TypeScript, Vite, WebMCP (`document.modelContext`), math.js,
 three.js, HTML canvas, GitHub Pages.
 
 ## Try it
