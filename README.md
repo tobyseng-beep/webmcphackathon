@@ -30,7 +30,7 @@ To let an agent drive it, open the live URL in either:
 - **ChatGPT desktop**, in the in-app browser, or
 - **Chrome 149+** with `chrome://flags/#enable-webmcp-testing` enabled.
 
-The badge in the top right reads **WebMCP · 14 tools** when registration succeeded, and
+The badge in the top right reads **WebMCP · 15 tools** when registration succeeded, and
 **WebMCP unavailable** otherwise. Every tool call the agent makes appears in the
 *Agent activity* panel on the right as it arrives.
 
@@ -46,7 +46,7 @@ with JSON arguments — same code path the agent uses.
 
 ## How WebMCP is implemented
 
-Every tool is registered on `document.modelContext` at page load
+All 15 tools are registered on `document.modelContext` at page load
 ([`src/tools.js`](src/tools.js)):
 
 ```js
