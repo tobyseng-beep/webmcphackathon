@@ -6,6 +6,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'index.html',
+        graph: 'graph.html',
         probe: 'probe.html',
       },
     },

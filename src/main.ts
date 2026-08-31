@@ -202,7 +202,11 @@ if (status.available) {
 /* ---------- first paint ---------- */
 
 applyMode();
-runTool('load_preset', { name: 'parabola_family' }, 'you').then(() => {
+
+// The menu links here as graph.html?mode=2d / ?mode=3d. Choosing the opening
+// preset is enough to set the board mode, since each preset declares its own.
+const startIn3D = new URLSearchParams(location.search).get('mode') === '3d';
+runTool('load_preset', { name: startIn3D ? 'saddle' : 'parabola_family' }, 'you').then(() => {
   logEl.innerHTML = '<p class="empty">Tool calls from the agent appear here as they arrive.</p>';
 });
 

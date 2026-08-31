@@ -3,95 +3,210 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chalkboard — an agent-drivable graphing sandbox</title>
-<meta name="description" content="A graphing calculator an AI agent can drive directly through WebMCP: it moves the sliders, zooms the viewport and pins labels while it explains.">
-<link rel="stylesheet" href="styles.css">
+<title>Smarterboard — explore our learning tools</title>
+<meta name="description" content="Interactive math and physics tools an AI agent can drive directly through WebMCP.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    position: relative;
+    overflow: hidden;
+    background-color: #0b1d3a;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.10) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.10) 1px, transparent 1px),
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 48px 48px, 48px 48px, 12px 12px, 12px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 1.5rem;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  .equation {
+    position: absolute;
+    color: #fff;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+    letter-spacing: .02em;
+  }
+
+  h2 {
+    font-size: clamp(1.3rem, 2.8vw, 1.9rem);
+    font-weight: 300;
+    color: rgba(255,255,255,.88);
+    margin: 0 0 2.75rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+    text-align: center;
+  }
+
+  .grid {
+    display: flex;
+    gap: clamp(1.5rem, 4vw, 3rem);
+    flex-wrap: wrap;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  .tool {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .8rem;
+    text-decoration: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .tile {
+    width: 90px;
+    height: 90px;
+    border-radius: 20px;
+    background: var(--gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 24px var(--shadow), 0 2px 8px rgba(0,0,0,.4);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+
+  .tool:hover .tile,
+  .tool:focus-visible .tile {
+    transform: translateY(-4px) scale(1.05);
+    box-shadow: 0 12px 32px var(--shadow), 0 4px 12px rgba(0,0,0,.5);
+  }
+
+  .tool:focus-visible { outline: none; }
+  .tool:focus-visible .tile { outline: 2px solid rgba(255,255,255,.8); outline-offset: 4px; }
+
+  .label {
+    font-size: .875rem;
+    color: rgba(255,255,255,.72);
+    font-weight: 400;
+    letter-spacing: .03em;
+  }
+
+  /* Not built yet: visibly unavailable rather than a button that does nothing. */
+  .tool.soon { cursor: not-allowed; }
+  .tool.soon .tile { filter: saturate(.35) brightness(.55); box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+  .tool.soon:hover .tile { transform: none; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+  .tool.soon .label { color: rgba(255,255,255,.4); }
+  .soon-badge {
+    display: block;
+    font-size: .62rem;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,.35);
+    margin-top: .2rem;
+  }
+
+  .foot {
+    position: relative;
+    z-index: 1;
+    margin-top: 3.25rem;
+    font-size: .78rem;
+    color: rgba(255,255,255,.38);
+    text-align: center;
+    letter-spacing: .02em;
+  }
+  .foot a { color: rgba(255,255,255,.6); }
+
+  @media (max-width: 520px) {
+    .equation { display: none; }
+  }
+</style>
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">
-    <span class="mark">∿</span>
-    <div>
-      <h1>Chalkboard</h1>
-      <p>a graphing sandbox your agent can actually draw on</p>
+<h2>Explore our learning tools</h2>
+
+<div class="grid">
+  <a class="tool" href="graph.html?mode=2d" data-tool="2d">
+    <div class="tile" style="--gradient: linear-gradient(145deg, #14532d 0%, #16a34a 55%, #4ade80 100%); --shadow: rgba(22,163,74,0.35);">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" width="52" height="52" aria-hidden="true">
+        <line x1="8" y1="32" x2="56" y2="32" stroke="white" stroke-width="1.8" stroke-opacity="0.55"/>
+        <line x1="32" y1="8" x2="32" y2="56" stroke="white" stroke-width="1.8" stroke-opacity="0.55"/>
+        <path d="M8 32 Q16 14 24 32 Q32 50 40 32 Q48 14 56 32" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="24" cy="32" r="3.5" fill="white" fill-opacity="0.85"/>
+        <circle cx="40" cy="32" r="3.5" fill="white" fill-opacity="0.85"/>
+      </svg>
     </div>
-  </div>
+    <span class="label">2D</span>
+  </a>
 
-  <div class="modes" role="tablist" aria-label="Board mode">
-    <button id="mode-2d" class="mode active" role="tab" aria-selected="true">2D</button>
-    <button id="mode-3d" class="mode" role="tab" aria-selected="false">3D</button>
-  </div>
-
-  <div class="topbar-right">
-    <label class="preset-wrap">
-      <span class="sr-only">Load a lesson</span>
-      <select id="preset-select">
-        <option value="">Load a lesson…</option>
-      </select>
-    </label>
-    <div id="mcp-badge" class="badge checking" title="WebMCP availability">
-      <span class="dot"></span><span id="mcp-text">checking…</span>
+  <a class="tool" href="graph.html?mode=3d" data-tool="3d">
+    <div class="tile" style="--gradient: linear-gradient(145deg, #7f1d1d 0%, #dc2626 60%, #f87171 100%); --shadow: rgba(220,38,38,0.35);">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" width="52" height="52" aria-hidden="true">
+        <line x1="32" y1="52" x2="32" y2="12" stroke="white" stroke-width="2" stroke-opacity="0.6"/>
+        <polygon points="32,8 29.5,14 34.5,14" fill="white" fill-opacity="0.7"/>
+        <line x1="32" y1="52" x2="58" y2="58" stroke="white" stroke-width="2" stroke-opacity="0.6"/>
+        <polygon points="62,59.5 57,53.5 56,60" fill="white" fill-opacity="0.7"/>
+        <line x1="32" y1="52" x2="8" y2="56" stroke="white" stroke-width="2" stroke-opacity="0.6"/>
+        <polygon points="4,57 9,51 10,58" fill="white" fill-opacity="0.7"/>
+        <path d="M20 42 Q28 28 36 34 Q44 40 52 26" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <path d="M14 46 Q22 34 30 38 Q38 42 46 30" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.45" fill="none"/>
+      </svg>
     </div>
-  </div>
-</header>
+    <span class="label">3D</span>
+  </a>
 
-<main class="layout">
-  <aside class="sidebar">
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Expressions</h2>
-        <button id="add-expr" class="ghost" title="Add an expression">+</button>
-      </div>
-      <div id="expr-list" class="expr-list"></div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Parameters</h2>
-      </div>
-      <div id="slider-list" class="slider-list">
-        <p class="empty">Use a letter like <code>a</code> in an expression and a slider appears here.</p>
-      </div>
-    </section>
-  </aside>
-
-  <section class="stage">
-    <canvas id="canvas2d"></canvas>
-    <div id="stage3d" class="stage3d" hidden>
-      <div id="labels3d" class="labels3d"></div>
+  <button class="tool soon" type="button" data-tool="circuits" aria-disabled="true">
+    <div class="tile" style="--gradient: linear-gradient(145deg, #5c2a0e 0%, #9a5123 40%, #c87941 75%, #dda870 100%); --shadow: rgba(180,105,50,0.4);">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" width="52" height="52" aria-hidden="true">
+        <polyline points="8,32 18,32 18,18 46,18 46,32 56,32" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.55"/>
+        <polyline points="8,32 18,32 18,46 46,46 46,32 56,32" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.55"/>
+        <rect x="27" y="13" width="10" height="10" rx="1.5" stroke="white" stroke-width="2" fill="none"/>
+        <line x1="29" y1="43" x2="29" y2="49" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="35" y1="43" x2="35" y2="49" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="8" cy="32" r="4.5" stroke="white" stroke-width="2" fill="none"/>
+        <line x1="6.5" y1="32" x2="9.5" y2="32" stroke="white" stroke-width="1.5"/>
+        <line x1="8" y1="30.5" x2="8" y2="33.5" stroke="white" stroke-width="1.5"/>
+        <line x1="56" y1="29" x2="56" y2="35" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        <line x1="53" y1="32" x2="59" y2="32" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      </svg>
     </div>
-    <div id="empty-hint" class="empty-hint">
-      <p>Ask your agent something like:</p>
-      <ul>
-        <li>“Load the parabola lesson and show me why <code>a</code> changes the width.”</li>
-        <li>“Plot a damped oscillation and mark the first peak.”</li>
-        <li>“Switch to 3D, graph <code>z = x² − y²</code> and orbit so I can see the saddle.”</li>
-      </ul>
-    </div>
-  </section>
+    <span class="label">Circuits<span class="soon-badge">coming soon</span></span>
+  </button>
 
-  <aside class="activity">
-    <div class="panel-head">
-      <h2>Agent activity</h2>
-      <button id="clear-log" class="ghost" title="Clear the log">clear</button>
+  <button class="tool soon" type="button" data-tool="physics" aria-disabled="true">
+    <div class="tile" style="--gradient: linear-gradient(145deg, #020617 0%, #0f172a 40%, #1e3a8a 80%, #2563eb 100%); --shadow: rgba(37,99,235,0.4);">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" width="52" height="52" aria-hidden="true">
+        <circle cx="32" cy="32" r="5" fill="white" fill-opacity="0.9"/>
+        <ellipse cx="32" cy="32" rx="22" ry="9" stroke="white" stroke-width="2" stroke-opacity="0.75" fill="none"/>
+        <ellipse cx="32" cy="32" rx="22" ry="9" stroke="white" stroke-width="2" stroke-opacity="0.75" fill="none" transform="rotate(60 32 32)"/>
+        <ellipse cx="32" cy="32" rx="22" ry="9" stroke="white" stroke-width="2" stroke-opacity="0.75" fill="none" transform="rotate(120 32 32)"/>
+        <circle cx="54" cy="32" r="3" fill="white"/>
+        <circle cx="21" cy="46.5" r="3" fill="white"/>
+        <circle cx="21" cy="17.5" r="3" fill="white"/>
+      </svg>
     </div>
-    <div id="log" class="log">
-      <p class="empty">Tool calls from the agent appear here as they arrive.</p>
-    </div>
+    <span class="label">Physics<span class="soon-badge">coming soon</span></span>
+  </button>
+</div>
 
-    <details class="inspector">
-      <summary>Tool inspector <span class="hint">(run a tool by hand)</span></summary>
-      <label class="sr-only" for="tool-select">Tool</label>
-      <select id="tool-select"></select>
-      <p id="tool-desc" class="tool-desc"></p>
-      <textarea id="tool-args" spellcheck="false" rows="4">{}</textarea>
-      <button id="tool-run" class="primary">Run tool</button>
-      <pre id="tool-result" class="tool-result"></pre>
-    </details>
-  </aside>
-</main>
+<p class="foot" id="foot">
+  Open in an agent-enabled browser and just ask — or
+  <a href="graph.html">go straight to the grapher</a>.
+</p>
 
-<script type="module" src="/src/main.ts"></script>
+<script type="module" src="/src/menu.ts"></script>
 </body>
 </html>
