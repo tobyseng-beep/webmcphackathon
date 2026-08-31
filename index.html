@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chalkboard — an agent-drivable graphing sandbox</title>
+<meta name="description" content="A graphing calculator an AI agent can drive directly through WebMCP: it moves the sliders, zooms the viewport and pins labels while it explains.">
+<link rel="stylesheet" href="styles.css">
+<script src="vendor/math.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">∿</span>
+    <div>
+      <h1>Chalkboard</h1>
+      <p>a graphing sandbox your agent can actually draw on</p>
+    </div>
+  </div>
+
+  <div class="modes" role="tablist" aria-label="Board mode">
+    <button id="mode-2d" class="mode active" role="tab" aria-selected="true">2D</button>
+    <button id="mode-3d" class="mode" role="tab" aria-selected="false">3D</button>
+  </div>
+
+  <div class="topbar-right">
+    <label class="preset-wrap">
+      <span class="sr-only">Load a lesson</span>
+      <select id="preset-select">
+        <option value="">Load a lesson…</option>
+      </select>
+    </label>
+    <div id="mcp-badge" class="badge checking" title="WebMCP availability">
+      <span class="dot"></span><span id="mcp-text">checking…</span>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Expressions</h2>
+        <button id="add-expr" class="ghost" title="Add an expression">+</button>
+      </div>
+      <div id="expr-list" class="expr-list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Parameters</h2>
+      </div>
+      <div id="slider-list" class="slider-list">
+        <p class="empty">Use a letter like <code>a</code> in an expression and a slider appears here.</p>
+      </div>
+    </section>
+  </aside>
+
+  <section class="stage">
+    <canvas id="canvas2d"></canvas>
+    <div id="stage3d" class="stage3d" hidden>
+      <div id="labels3d" class="labels3d"></div>
+    </div>
+    <div id="empty-hint" class="empty-hint">
+      <p>Ask your agent something like:</p>
+      <ul>
+        <li>“Load the parabola lesson and show me why <code>a</code> changes the width.”</li>
+        <li>“Plot a damped oscillation and mark the first peak.”</li>
+        <li>“Switch to 3D, graph <code>z = x² − y²</code> and orbit so I can see the saddle.”</li>
+      </ul>
+    </div>
+  </section>
+
+  <aside class="activity">
+    <div class="panel-head">
+      <h2>Agent activity</h2>
+      <button id="clear-log" class="ghost" title="Clear the log">clear</button>
+    </div>
+    <div id="log" class="log">
+      <p class="empty">Tool calls from the agent appear here as they arrive.</p>
+    </div>
+
+    <details class="inspector">
+      <summary>Tool inspector <span class="hint">(run a tool by hand)</span></summary>
+      <label class="sr-only" for="tool-select">Tool</label>
+      <select id="tool-select"></select>
+      <p id="tool-desc" class="tool-desc"></p>
+      <textarea id="tool-args" spellcheck="false" rows="4">{}</textarea>
+      <button id="tool-run" class="primary">Run tool</button>
+      <pre id="tool-result" class="tool-result"></pre>
+    </details>
+  </aside>
+</main>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
