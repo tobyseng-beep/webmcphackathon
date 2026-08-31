@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebMCP probe</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font:16px/1.5 ui-sans-serif,system-ui,sans-serif;max-width:44rem;margin:3rem auto;padding:0 1rem}
+  #status{padding:.75rem 1rem;border-radius:.5rem;font-weight:600}
+  .ok{background:#dcfce7;color:#14532d} .bad{background:#fee2e2;color:#7f1d1d}
+  #log{background:#0b1020;color:#d6e2ff;padding:1rem;border-radius:.5rem;white-space:pre-wrap;min-height:6rem}
+  code{background:#eef;padding:.1em .35em;border-radius:.25em}
+</style>
+<h1>WebMCP Step-0 probe</h1>
+<p id="status">checking…</p>
+<p>Ask the agent: <b>“call the probe_ping tool with message hello”</b></p>
+<h3>Tool call log</h3>
+<div id="log">(nothing yet)</div>
+
+<script type="module">
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('log');
+  const log = (m) => {
+    logEl.textContent = (logEl.textContent === '(nothing yet)' ? '' : logEl.textContent + '\n') +
+      new Date().toLocaleTimeString() + '  ' + m;
+  };
+
+  // The spec is still in flux across builds: accept either host object.
+  const host = document.modelContext ?? navigator.modelContext ?? null;
+
+  if (!host) {
+    statusEl.className = 'bad';
+    statusEl.textContent = 'NOT AVAILABLE — no document.modelContext / navigator.modelContext on this page.';
+  } else {
+    const where = document.modelContext ? 'document.modelContext' : 'navigator.modelContext';
+    const methods = Object.keys(host).concat(
+      Object.getOwnPropertyNames(Object.getPrototypeOf(host) || {})
+    ).filter(k => k !== 'constructor');
+    statusEl.className = 'ok';
+    statusEl.textContent = `AVAILABLE at ${where} — methods: ${methods.join(', ')}`;
+
+    const tool = {
+      name: 'probe_ping',
+      description: 'Diagnostic. Echoes back a message to confirm the page can receive tool calls from the agent. Call this when asked to test the connection.',
+      inputSchema: {
+        type: 'object',
+        properties: { message: { type: 'string', description: 'Any text to echo back.' } },
+        required: ['message']
+      },
+      execute: async ({ message }) => {
+        log('probe_ping called with: ' + JSON.stringify(message));
+        return { ok: true, echo: message, at: new Date().toISOString() };
+      }
+    };
+
+    try {
+      if (typeof host.registerTool === 'function') { host.registerTool(tool); log('registered via registerTool()'); }
+      else if (typeof host.provideContext === 'function') { host.provideContext({ tools: [tool] }); log('registered via provideContext()'); }
+      else { statusEl.className = 'bad'; statusEl.textContent += ' — but no registerTool/provideContext method found'; }
+    } catch (e) {
+      statusEl.className = 'bad';
+      statusEl.textContent = 'registration threw: ' + e.message;
+    }
+  }
+</script>
