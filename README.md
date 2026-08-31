@@ -1,4 +1,4 @@
-# Chalkboard
+# Smarterboard
 
 **A graphing sandbox an AI agent can actually draw on.**
 
