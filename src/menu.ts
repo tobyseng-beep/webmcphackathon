@@ -72,6 +72,12 @@ const CATALOG: Record<string, CatalogEntry> = {
     ready: false,
     about: 'Not built yet. For kinematics and oscillation today, open the 2D grapher and load the projectile, damped_oscillator or wave_beats lesson.',
   },
+  chemistry: {
+    href: null,
+    title: 'Chemistry sandbox',
+    ready: false,
+    about: 'Not built yet.',
+  },
 };
 
 // The unavailable tiles say so rather than failing silently on click.
