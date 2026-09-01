@@ -64,6 +64,7 @@ export interface BoardState {
   annotations: Annotation[];
   viewport: Viewport;
   camera: CameraState;
+  snapping: boolean;
 }
 
 export type MutationReason =
@@ -72,7 +73,8 @@ export type MutationReason =
   | 'viewport'
   | 'camera'
   | 'mode'
-  | 'annotations';
+  | 'annotations'
+  | 'settings';
 
 export interface SliderSpec {
   min?: number;

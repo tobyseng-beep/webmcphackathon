@@ -3,6 +3,8 @@
 // store.setViewport so the agent sees the same viewport the student does.
 
 import { getState, scope, setViewport } from './store';
+import { niceStep } from './gridmath';
+import { showHover, hideHover } from './hover';
 import type { Expression } from './types';
 
 let canvas: HTMLCanvasElement;
@@ -56,14 +58,6 @@ function transforms(): Transforms {
     toY: (py) => ymin + ((H - py) / H) * (ymax - ymin),
     W, H, xmin, xmax, ymin, ymax,
   };
-}
-
-function niceStep(span: number, target: number): number {
-  const raw = span / target;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const norm = raw / mag;
-  const mult = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
-  return mult * mag;
 }
 
 function fmt(v: number, step: number): string {
@@ -353,16 +347,27 @@ function attachInteraction(): void {
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
+    if (dragging) {
+      const t = transforms();
+      const dx = (e.offsetX - last[0]) / t.W * (t.xmax - t.xmin);
+      const dy = (e.offsetY - last[1]) / t.H * (t.ymax - t.ymin);
+      last = [e.offsetX, e.offsetY];
+      setViewport({
+        xmin: t.xmin - dx, xmax: t.xmax - dx,
+        ymin: t.ymin + dy, ymax: t.ymax + dy,
+      });
+      hideHover();
+      return;
+    }
     const t = transforms();
-    const dx = (e.offsetX - last[0]) / t.W * (t.xmax - t.xmin);
-    const dy = (e.offsetY - last[1]) / t.H * (t.ymax - t.ymin);
-    last = [e.offsetX, e.offsetY];
-    setViewport({
-      xmin: t.xmin - dx, xmax: t.xmax - dx,
-      ymin: t.ymin + dy, ymax: t.ymax + dy,
-    });
+    const stepX = niceStep(t.xmax - t.xmin, Math.max(4, t.W / 90));
+    const stepY = niceStep(t.ymax - t.ymin, Math.max(4, t.H / 70));
+    showHover(e.clientX, e.clientY, [
+      { label: 'x', value: t.toX(e.offsetX), majorStep: stepX },
+      { label: 'y', value: t.toY(e.offsetY), majorStep: stepY },
+    ]);
   });
+  canvas.addEventListener('pointerleave', () => hideHover());
   const end = () => { dragging = false; interacting = false; draw(); };
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);

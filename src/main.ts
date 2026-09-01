@@ -7,15 +7,24 @@ import { TOOLS, registerTools } from './tools';
 import { PRESETS } from './presets';
 import { initRender2D, draw as draw2D, resize2D } from './render2d';
 import { initRender3D, rebuild as rebuild3D, resize3D } from './render3d';
+import { initHoverBox } from './hover';
 import { renderAll, focusLastExpression } from './ui';
 import { mustQuery } from './dom';
 
 const canvas2d = mustQuery<HTMLCanvasElement>('#canvas2d');
 const stage3d = mustQuery<HTMLDivElement>('#stage3d');
 const labels3d = mustQuery<HTMLDivElement>('#labels3d');
+const stage = mustQuery<HTMLElement>('.stage');
+const hoverBox = mustQuery<HTMLDivElement>('#hover-box');
 const logEl = mustQuery<HTMLDivElement>('#log');
 const badge = mustQuery<HTMLDivElement>('#mcp-badge');
 const badgeText = mustQuery<HTMLSpanElement>('#mcp-text');
+
+initHoverBox(hoverBox, stage);
+
+const snapToggle = mustQuery<HTMLInputElement>('#snap-toggle');
+snapToggle.checked = graph.getState().snapping;
+snapToggle.addEventListener('change', () => graph.setSnapping(snapToggle.checked));
 
 /* ---------- activity log ---------- */
 

@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getState, scope, setCamera } from './store';
+import { niceStep } from './gridmath';
+import { showHover, hideHover } from './hover';
 import type { Annotation, Expression, Viewport } from './types';
 
 const SPAN = 10;
@@ -62,6 +64,7 @@ interface WorldTransform {
   x: (value: number) => number;
   y: (value: number) => number;
   z: (value: number) => number;
+  scale: number;
 }
 
 function worldTransform(view: Viewport): WorldTransform {
@@ -80,6 +83,7 @@ function worldTransform(view: Viewport): WorldTransform {
     x: (value) => value * scale,
     y: (value) => value * scale,
     z: (value) => value * scale,
+    scale,
   };
 }
 
@@ -332,21 +336,48 @@ function animate(): void {
 
 function attachInteraction(): void {
   const el = renderer.domElement;
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
   let dragging = false;
   let last: [number, number] = [0, 0];
   el.addEventListener('pointerdown', (e) => {
     dragging = true; last = [e.clientX, e.clientY];
     el.setPointerCapture(e.pointerId);
+    hideHover();
   });
   el.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    const cam = getState().camera;
-    setCamera({
-      theta: cam.theta - (e.clientX - last[0]) * 0.4,
-      phi: cam.phi - (e.clientY - last[1]) * 0.4,
-    });
-    last = [e.clientX, e.clientY];
+    if (dragging) {
+      const cam = getState().camera;
+      setCamera({
+        theta: cam.theta - (e.clientX - last[0]) * 0.4,
+        phi: cam.phi - (e.clientY - last[1]) * 0.4,
+      });
+      last = [e.clientX, e.clientY];
+      return;
+    }
+
+    const meshes = [...surfaces.values()];
+    if (!meshes.length) { hideHover(); return; }
+    const rect = el.getBoundingClientRect();
+    ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(meshes, false);
+    if (!hits.length) { hideHover(); return; }
+
+    const view = getState().viewport;
+    const world = worldTransform(view);
+    const point = hits[0].point;
+    const stepX = niceStep(view.xmax - view.xmin, 10);
+    const stepY = niceStep(view.ymax - view.ymin, 10);
+    const stepZ = niceStep(view.zmax - view.zmin, 10);
+    showHover(e.clientX, e.clientY, [
+      { label: 'x', value: point.x / world.scale, majorStep: stepX },
+      { label: 'y', value: point.y / world.scale, majorStep: stepY },
+      { label: 'z', value: point.z / world.scale, majorStep: stepZ },
+    ]);
   });
+  el.addEventListener('pointerleave', () => hideHover());
   const end = () => { dragging = false; };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);

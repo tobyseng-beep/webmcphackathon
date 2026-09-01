@@ -78,6 +78,12 @@ select, textarea, input[type="text"] {
 }
 select { font-size: .86rem; }
 
+.snap-toggle {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .8rem; color: var(--muted); cursor: pointer; user-select: none;
+}
+.snap-toggle input { accent-color: var(--accent); cursor: pointer; }
+
 .badge {
   display: inline-flex; align-items: center; gap: .45rem;
   font-size: .78rem; font-weight: 600;
@@ -218,6 +224,20 @@ select { font-size: .86rem; }
   padding: .22rem .5rem;
   border-radius: 5px;
   white-space: nowrap;
+}
+
+.hover-box {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(17, 24, 39, .92);
+  color: #fff;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  padding: .3rem .55rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 5;
 }
 
 .empty-hint {
