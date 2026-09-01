@@ -31,6 +31,7 @@ const state: BoardState = {
   viewport: { xmin: -10, xmax: 10, ymin: -6.5, ymax: 6.5, zmin: -5, zmax: 5 },
   camera: { theta: 45, phi: 60, distance: 34 },
   snapping: true,
+  snapToCurve: true,
 };
 
 type Listener = (reason: MutationReason, state: BoardState) => void;
@@ -312,6 +313,12 @@ export function setCamera(patch: Partial<CameraState>): Result<{ camera: CameraS
   state.camera = c;
   notify('camera');
   return { ok: true, camera: { ...c } };
+}
+
+export function setSnapToCurve(enabled: boolean): Result<{ snapToCurve: boolean }> {
+  state.snapToCurve = Boolean(enabled);
+  notify('settings');
+  return { ok: true, snapToCurve: state.snapToCurve };
 }
 
 export function setSnapping(enabled: boolean): Result<{ snapping: boolean }> {

@@ -65,6 +65,7 @@ export interface BoardState {
   viewport: Viewport;
   camera: CameraState;
   snapping: boolean;
+  snapToCurve: boolean;
 }
 
 export type MutationReason =

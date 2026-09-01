@@ -251,6 +251,17 @@ select { font-size: .86rem; }
   z-index: 5;
 }
 
+.hover-dot {
+  position: absolute;
+  width: 11px; height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--accent);
+  pointer-events: none;
+  z-index: 5;
+}
+
 .empty-hint {
   position: absolute; left: 50%; bottom: 1.6rem; transform: translateX(-50%);
   max-width: 34rem; background: rgba(255,255,255,.94);

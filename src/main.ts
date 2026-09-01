@@ -16,15 +16,16 @@ const stage3d = mustQuery<HTMLDivElement>('#stage3d');
 const labels3d = mustQuery<HTMLDivElement>('#labels3d');
 const stage = mustQuery<HTMLElement>('.stage');
 const hoverBox = mustQuery<HTMLDivElement>('#hover-box');
+const hoverDot = mustQuery<HTMLDivElement>('#hover-dot');
 const logEl = mustQuery<HTMLDivElement>('#log');
 const badge = mustQuery<HTMLDivElement>('#mcp-badge');
 const badgeText = mustQuery<HTMLSpanElement>('#mcp-text');
 
-initHoverBox(hoverBox, stage);
+initHoverBox(hoverBox, stage, hoverDot);
 
-const snapToggle = mustQuery<HTMLInputElement>('#snap-toggle');
-snapToggle.checked = graph.getState().snapping;
-snapToggle.addEventListener('change', () => graph.setSnapping(snapToggle.checked));
+const snapCurveToggle = mustQuery<HTMLInputElement>('#snap-curve-toggle');
+snapCurveToggle.checked = graph.getState().snapToCurve;
+snapCurveToggle.addEventListener('change', () => graph.setSnapToCurve(snapCurveToggle.checked));
 
 /* ---------- activity log ---------- */
 

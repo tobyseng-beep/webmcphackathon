@@ -7,11 +7,13 @@ import { getState } from './store';
 import { decimalsForStep, snapToMinorGrid } from './gridmath';
 
 let box: HTMLDivElement;
+let dot: HTMLDivElement | null = null;
 let stageEl: HTMLElement;
 
-export function initHoverBox(boxEl: HTMLDivElement, stage: HTMLElement): void {
+export function initHoverBox(boxEl: HTMLDivElement, stage: HTMLElement, dotEl?: HTMLDivElement): void {
   box = boxEl;
   stageEl = stage;
+  dot = dotEl ?? null;
 }
 
 export interface HoverAxis {
@@ -27,15 +29,26 @@ export interface HoverAxis {
   resolvedValue?: number;
 }
 
-/** `pageX`/`pageY` are viewport coordinates (e.g. from a PointerEvent). */
-export function showHover(pageX: number, pageY: number, axes: HoverAxis[]): void {
+/**
+ * `pageX`/`pageY` are viewport coordinates (e.g. from a PointerEvent) used to
+ * anchor the readout box. When `marker` is given (the snapped point on a
+ * curve, in viewport coordinates) a dot is drawn there; pass null to hide it.
+ */
+export function showHover(
+  pageX: number,
+  pageY: number,
+  axes: HoverAxis[],
+  marker?: { x: number; y: number } | null,
+): void {
   if (!box || !stageEl) return;
   const snapping = getState().snapping;
 
   const parts = axes.map(({ label, value, majorStep, resolvedValue }) => {
-    const out = !snapping ? value
-      : resolvedValue !== undefined ? resolvedValue
-      : snapToMinorGrid(value, majorStep).value;
+    // A value already resolved onto a curve always wins; otherwise the grid
+    // toggle decides between a grid-snapped and a raw reading.
+    const out = resolvedValue !== undefined ? resolvedValue
+      : snapping ? snapToMinorGrid(value, majorStep).value
+      : value;
     const decimals = decimalsForStep(majorStep) + 1;
     return `${label}: ${out.toFixed(decimals)}`;
   });
@@ -51,8 +64,19 @@ export function showHover(pageX: number, pageY: number, axes: HoverAxis[]): void
   if (top + h > stageRect.height - 4) top = stageRect.height - h - 4;
   box.style.left = `${left}px`;
   box.style.top = `${top}px`;
+
+  if (dot) {
+    if (marker) {
+      dot.style.left = `${marker.x - stageRect.left}px`;
+      dot.style.top = `${marker.y - stageRect.top}px`;
+      dot.hidden = false;
+    } else {
+      dot.hidden = true;
+    }
+  }
 }
 
 export function hideHover(): void {
   if (box) box.hidden = true;
+  if (dot) dot.hidden = true;
 }

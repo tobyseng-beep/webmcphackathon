@@ -31,9 +31,9 @@
         <option value="">Load a lesson…</option>
       </select>
     </label>
-    <label class="snap-toggle" title="Snap the hover coordinate readout to the nearest grid line">
-      <input type="checkbox" id="snap-toggle" checked>
-      <span>Snap to grid</span>
+    <label class="snap-toggle" title="Snap the readout onto a plotted curve and mark the point">
+      <input type="checkbox" id="snap-curve-toggle" checked>
+      <span>Snap to curve</span>
     </label>
     <div id="mcp-badge" class="badge checking" title="WebMCP availability">
       <span class="dot"></span><span id="mcp-text">checking…</span>
@@ -67,6 +67,7 @@
       <div id="labels3d" class="labels3d"></div>
     </div>
     <div id="hover-box" class="hover-box" hidden></div>
+    <div id="hover-dot" class="hover-dot" hidden></div>
     <div id="empty-hint" class="empty-hint">
       <p>Ask your agent something like:</p>
       <ul>

@@ -3,7 +3,7 @@
 // store.setViewport so the agent sees the same viewport the student does.
 
 import { getState, scope, setViewport } from './store';
-import { niceStep, snapToMinorGrid } from './gridmath';
+import { niceStep } from './gridmath';
 import { showHover, hideHover } from './hover';
 import type { Expression } from './types';
 
@@ -354,44 +354,34 @@ interface CurveSnapResult {
  * that grid intersection instead of the raw curve value.
  */
 function curveSnap(rawX: number, rawY: number, stepX: number, stepY: number): CurveSnapResult {
-  const thresholdX = (stepX / 5 / 4) * 2;
-  const thresholdY = (stepY / 5 / 4) * 2;
+  // Strong magnetism: capture within two minor grid cells of the curve, so it
+  // is hard to slip off the line while sliding along it, and the curve wins
+  // over nearby grid points.
+  const thresholdX = (stepX / 5) * 2;
+  const thresholdY = (stepY / 5) * 2;
 
-  // The x (or y) the curve gets evaluated at should be whatever will actually
-  // be displayed for that axis, so the shown pair always satisfies y=f(x) --
-  // otherwise a grid-snapped x next to a raw curve-y would not really be a
-  // point on the curve.
-  const gridX = snapToMinorGrid(rawX, stepX);
-  const gridY = snapToMinorGrid(rawY, stepY);
-  const displayX = gridX.snapped ? gridX.value : rawX;
-  const displayY = gridY.snapped ? gridY.value : rawY;
-
+  // Find the nearest plotted curve to the RAW cursor and lock onto the exact
+  // point on it under the cursor, so the marker glides smoothly along the line.
+  // Grid snap is intentionally not applied here -- it governs the free readout
+  // when the cursor is not near any curve.
   let best: { axis: 'y' | 'x'; x: number; y: number; dist: number } | null = null;
   for (const expr of getState().expressions) {
     if (!expr.visible || expr.error || !expr.fn) continue;
     if (expr.kind === 'explicit_y') {
-      const y = evaluator(expr, 'x')(displayX);
+      const y = evaluator(expr, 'x')(rawX);
       const dist = Math.abs(rawY - y);
       if (Number.isFinite(y) && dist <= thresholdY && (!best || dist < best.dist)) {
-        best = { axis: 'y', x: displayX, y, dist };
+        best = { axis: 'y', x: rawX, y, dist };
       }
     } else if (expr.kind === 'explicit_x') {
-      const x = evaluator(expr, 'y')(displayY);
+      const x = evaluator(expr, 'y')(rawY);
       const dist = Math.abs(rawX - x);
       if (Number.isFinite(x) && dist <= thresholdX && (!best || dist < best.dist)) {
-        best = { axis: 'x', x, y: displayY, dist };
+        best = { axis: 'x', x, y: rawY, dist };
       }
     }
   }
   if (!best) return {};
-
-  if (best.axis === 'y') {
-    const gy = snapToMinorGrid(best.y, stepY);
-    if (gridX.snapped && gy.snapped) return { resolvedX: gridX.value, resolvedY: gy.value };
-    return { resolvedX: best.x, resolvedY: best.y };
-  }
-  const gx = snapToMinorGrid(best.x, stepX);
-  if (gx.snapped && gridY.snapped) return { resolvedX: gx.value, resolvedY: gridY.value };
   return { resolvedX: best.x, resolvedY: best.y };
 }
 
@@ -420,11 +410,22 @@ function attachInteraction(): void {
     const stepX = niceStep(t.xmax - t.xmin, Math.max(4, t.W / 90));
     const stepY = niceStep(t.ymax - t.ymin, Math.max(4, t.H / 70));
     const rawX = t.toX(e.offsetX), rawY = t.toY(e.offsetY);
-    const curve = getState().snapping ? curveSnap(rawX, rawY, stepX, stepY) : {};
-    showHover(e.clientX, e.clientY, [
+    const curve = getState().snapToCurve ? curveSnap(rawX, rawY, stepX, stepY) : {};
+
+    // When the readout locks onto a curve, anchor the box (and draw a dot) at
+    // that point on screen rather than at the raw cursor.
+    let anchorX = e.clientX, anchorY = e.clientY;
+    let marker: { x: number; y: number } | null = null;
+    if (curve.resolvedX !== undefined && curve.resolvedY !== undefined) {
+      const rect = canvas.getBoundingClientRect();
+      anchorX = rect.left + t.toPx(curve.resolvedX);
+      anchorY = rect.top + t.toPy(curve.resolvedY);
+      marker = { x: anchorX, y: anchorY };
+    }
+    showHover(anchorX, anchorY, [
       { label: 'x', value: rawX, majorStep: stepX, resolvedValue: curve.resolvedX },
       { label: 'y', value: rawY, majorStep: stepY, resolvedValue: curve.resolvedY },
-    ]);
+    ], marker);
   });
   canvas.addEventListener('pointerleave', () => hideHover());
   const end = () => { dragging = false; interacting = false; draw(); };
