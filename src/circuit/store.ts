@@ -23,11 +23,16 @@ const state: CircuitState = {
   components: [],
   wires: [],
   selectedId: null,
+  selectedWireId: null,
   running: true,
   view: { originX: -8, originY: -6, scale: 46 },
   solution: null,
   message: null,
 };
+
+// Held capacitor voltages, carried between transient steps (kept out of the
+// serialisable-ish state object because it is solver bookkeeping).
+let capVoltage: Record<string, number> = {};
 
 type Listener = (reason: ChangeReason, state: CircuitState) => void;
 const listeners = new Set<Listener>();
@@ -36,7 +41,7 @@ const counters = new Map<ComponentType, number>();
 let wireCounter = 0;
 
 const ID_PREFIX: Record<ComponentType, string> = {
-  battery: 'bat', resistor: 'r', led: 'led', lamp: 'lamp', switch: 'sw', ground: 'gnd',
+  battery: 'bat', resistor: 'r', led: 'led', lamp: 'lamp', switch: 'sw', capacitor: 'cap', diode: 'd', ground: 'gnd',
 };
 
 function notify(reason: ChangeReason): void {
@@ -59,12 +64,36 @@ function nextId(type: ComponentType): string {
   return `${ID_PREFIX[type]}${n}`;
 }
 
-// Re-run the solve and publish it. Every mutating function ends by calling this.
-export function resolve(): Solution {
-  const solution = solve(state.components, state.wires);
+export function hasCapacitors(): boolean {
+  return state.components.some((c) => c.type === 'capacitor');
+}
+
+// One solve step. dt === 0 takes an instantaneous snapshot; dt > 0 advances any
+// capacitors one transient step. Every mutating function ends by calling
+// resolve(), which is a dt === 0 snapshot.
+function step(dt: number): Solution {
+  const solution = solve(state.components, state.wires, { dt, capVoltage });
+  if (solution.ok) capVoltage = { ...capVoltage, ...solution.capVoltage };
   state.solution = solution;
   notify('solution');
   return solution;
+}
+
+export function resolve(): Solution {
+  return step(0);
+}
+
+// Called by the render loop to move time forward while a capacitor is present.
+export function advance(dt: number): void {
+  if (!state.running || !hasCapacitors()) return;
+  step(Math.min(0.05, Math.max(0, dt)));
+}
+
+// Reset the transient: discharge every capacitor and re-solve from t = 0.
+export function resetSimulation(): { ok: true } {
+  capVoltage = {};
+  resolve();
+  return { ok: true };
 }
 
 function autoPlace(): { x: number; y: number } {
@@ -102,8 +131,10 @@ export function addComponent(type: ComponentType, opts: AddOptions = {}): { ok: 
     color,
     label: opts.label ?? null,
   };
+  if (type === 'capacitor') capVoltage[id] = 0;
   state.components.push(component);
   state.selectedId = id;
+  state.selectedWireId = null;
   notify('components');
   resolve();
   return { ok: true, id, pins: pinNames(type) };
@@ -119,6 +150,7 @@ export function removeComponent(id: string): { ok: boolean; error?: string } {
   const idx = state.components.findIndex((c) => c.id === id);
   if (idx === -1) return { ok: false, error: `No component with id "${id}".` };
   state.components.splice(idx, 1);
+  delete capVoltage[id];
   // Drop any wires that referenced this component's pins.
   state.wires = state.wires.filter((w) => !w.from.startsWith(`${id}.`) && !w.to.startsWith(`${id}.`));
   if (state.selectedId === id) state.selectedId = null;
@@ -127,10 +159,11 @@ export function removeComponent(id: string): { ok: boolean; error?: string } {
   return { ok: true };
 }
 
-export function moveComponent(id: string, x: number, y: number): { ok: boolean; error?: string } {
+export function moveComponent(id: string, x: number, y: number, snap = true): { ok: boolean; error?: string } {
   const c = componentById(id);
   if (!c) return { ok: false, error: `No component with id "${id}".` };
-  c.x = Math.round(x); c.y = Math.round(y);
+  c.x = snap ? Math.round(x) : x;
+  c.y = snap ? Math.round(y) : y;
   notify('components');
   resolve();
   return { ok: true };
@@ -218,6 +251,7 @@ export function removeWire(wireId: string): { ok: boolean; error?: string } {
   const before = state.wires.length;
   state.wires = state.wires.filter((w) => w.id !== wireId);
   if (state.wires.length === before) return { ok: false, error: `No wire "${wireId}".` };
+  if (state.selectedWireId === wireId) state.selectedWireId = null;
   notify('wires');
   resolve();
   return { ok: true };
@@ -227,6 +261,8 @@ export function clearAll(): { ok: true } {
   state.components = [];
   state.wires = [];
   state.selectedId = null;
+  state.selectedWireId = null;
+  capVoltage = {};
   counters.clear();
   wireCounter = 0;
   notify('components');
@@ -245,6 +281,13 @@ export function clearWires(): { ok: true } {
 
 export function setSelected(id: string | null): void {
   state.selectedId = id;
+  if (id !== null) state.selectedWireId = null;
+  notify('selection');
+}
+
+export function setSelectedWire(id: string | null): void {
+  state.selectedWireId = id;
+  if (id !== null) state.selectedId = null;
   notify('selection');
 }
 

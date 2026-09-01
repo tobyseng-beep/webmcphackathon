@@ -25,7 +25,10 @@ const COLORS = {
   pin: '#64748b',
   pinLive: '#2d70b3',
   select: '#2d70b3',
+  current: '#e0a500',
   wire: '#475569',
+  wireSelected: '#dc2626',
+  wireHover: '#ef4444',
   labelBg: 'rgba(255,255,255,0.92)',
   labelInk: '#16202e',
   muted: '#94a3b8',
@@ -255,6 +258,32 @@ function drawSwitch(ax: Axis, closed: boolean): void {
   else line(hingeL, pt(ax.mid, ax, bodyHalf * 0.6, -bodyHalf * 0.7));
 }
 
+function drawCapacitor(ax: Axis): void {
+  const bodyHalf = 5;
+  drawLeads(ax, bodyHalf);
+  ctx.strokeStyle = COLORS.body;
+  ctx.lineWidth = 2.6;
+  const plateHalf = 14;
+  const a = pt(ax.mid, ax, -3, 0);
+  const b = pt(ax.mid, ax, 3, 0);
+  line(pt(a, ax, 0, -plateHalf), pt(a, ax, 0, plateHalf));
+  line(pt(b, ax, 0, -plateHalf), pt(b, ax, 0, plateHalf));
+}
+
+function drawDiode(ax: Axis): void {
+  const bodyHalf = Math.min(ax.len * 0.28, 18);
+  drawLeads(ax, bodyHalf);
+  const t = bodyHalf * 0.9;
+  const apex = pt(ax.mid, ax, t, 0);
+  const baseA = pt(ax.mid, ax, -t, -t);
+  const baseB = pt(ax.mid, ax, -t, t);
+  ctx.beginPath();
+  ctx.moveTo(baseA.x, baseA.y); ctx.lineTo(baseB.x, baseB.y); ctx.lineTo(apex.x, apex.y); ctx.closePath();
+  ctx.fillStyle = '#475569'; ctx.strokeStyle = COLORS.body; ctx.lineWidth = 2.2;
+  ctx.fill(); ctx.stroke();
+  line(pt(ax.mid, ax, t, -t), pt(ax.mid, ax, t, t)); // cathode bar
+}
+
 function drawGround(component: Component): void {
   const w = pinPosition(component, 'gnd');
   const pin = toScreen(w.x, w.y);
@@ -297,13 +326,13 @@ function drawCurrentDots(component: Component, ax: Axis): void {
   const spacing = 16;
   const speed = Math.min(90, 12 + mag * 2600); // px/sec, gently saturating
   const phase = (clock * speed * dir) % spacing;
-  ctx.fillStyle = COLORS.pinLive;
+  ctx.fillStyle = COLORS.current;
   const count = Math.ceil(ax.len / spacing) + 1;
   for (let i = -1; i < count; i++) {
-    let along = i * spacing + (phase < 0 ? phase + spacing : phase);
+    const along = i * spacing + (phase < 0 ? phase + spacing : phase);
     if (along < 4 || along > ax.len - 4) continue;
     const p = pt(ax.p0, ax, along, 0);
-    ctx.beginPath(); ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
   }
 }
 
@@ -320,14 +349,16 @@ function pinScreen(pinRef: string): Vec2 | null {
 }
 
 function drawWires(): void {
-  const { wires } = circuit.getState();
-  ctx.strokeStyle = COLORS.wire;
-  ctx.lineWidth = 3;
+  const { wires, selectedWireId } = circuit.getState();
   ctx.lineCap = 'round';
   for (const w of wires) {
     const a = pinScreen(w.from);
     const b = pinScreen(w.to);
     if (!a || !b) continue;
+    const isSel = w.id === selectedWireId;
+    const isHover = w.id === hoverWire;
+    ctx.strokeStyle = isSel ? COLORS.wireSelected : isHover ? COLORS.wireHover : COLORS.wire;
+    ctx.lineWidth = isSel || isHover ? 4 : 3;
     line(a, b);
   }
 }
@@ -395,6 +426,35 @@ function roundRect(x: number, y: number, w: number, h: number, r: number): void 
   ctx.closePath();
 }
 
+function round2(v: number): number { return Math.round(v * 100) / 100; }
+function formatOhms(v: number): string {
+  if (v >= 1e6) return `${round2(v / 1e6)} MΩ`;
+  if (v >= 1e3) return `${round2(v / 1e3)} kΩ`;
+  return `${round2(v)} Ω`;
+}
+function formatValue(c: Component): string | null {
+  switch (c.type) {
+    case 'battery': return `${round2(c.value)} V`;
+    case 'resistor':
+    case 'lamp': return formatOhms(c.value);
+    case 'capacitor': return `${round2(c.value)} µF`;
+    default: return null;
+  }
+}
+function drawValueLabel(c: Component, ax: Axis): void {
+  const text = formatValue(c);
+  if (!text) return;
+  const x = ax.mid.x;
+  const y = ax.mid.y + 21;
+  ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + 6;
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  roundRect(x - w / 2, y - 7, w, 14, 3); ctx.fill();
+  ctx.fillStyle = COLORS.muted;
+  ctx.fillText(text, x, y);
+}
+
 function drawComponent(c: Component): void {
   if (c.type === 'ground') { drawGround(c); return; }
   const ax = axisOf(c);
@@ -405,8 +465,11 @@ function drawComponent(c: Component): void {
     case 'battery': drawBattery(ax); break;
     case 'led': drawLed(ax, LED_SPEC[c.color].hex, !!res?.lit, res?.brightness ?? 0); break;
     case 'switch': drawSwitch(ax, c.closed); break;
+    case 'capacitor': drawCapacitor(ax); break;
+    case 'diode': drawDiode(ax); break;
     default: break;
   }
+  drawValueLabel(c, ax);
   drawCurrentDots(c, ax);
 }
 
@@ -460,7 +523,7 @@ let last = performance.now();
 function frame(now: number): void {
   const dt = (now - last) / 1000;
   last = now;
-  if (circuit.getState().running) clock += dt;
+  if (circuit.getState().running) { clock += dt; circuit.advance(dt); }
   draw();
   requestAnimationFrame(frame);
 }
@@ -468,6 +531,7 @@ function frame(now: number): void {
 // ---- interaction ----
 
 let hoverPin: string | null = null;
+let hoverWire: string | null = null;
 let wireStart: string | null = null;
 let pointer: Vec2 = { x: 0, y: 0 };
 
@@ -511,6 +575,20 @@ function componentHitTest(px: number, py: number): string | null {
   return null;
 }
 
+function wireHitTest(px: number, py: number): string | null {
+  const { wires } = circuit.getState();
+  let best: string | null = null;
+  let bestD = 8;
+  for (const w of wires) {
+    const a = pinScreen(w.from);
+    const b = pinScreen(w.to);
+    if (!a || !b) continue;
+    const d = distToSegment({ x: px, y: py }, a, b);
+    if (d < bestD) { bestD = d; best = w.id; }
+  }
+  return best;
+}
+
 function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   const dx = b.x - a.x, dy = b.y - a.y;
   const l2 = dx * dx + dy * dy;
@@ -533,14 +611,17 @@ function attachInteraction(): void {
     }
     if (drag.kind === 'move' && drag.compId) {
       const w = toWorld(e.offsetX, e.offsetY);
-      const nx = Math.round(drag.compStart!.x + (w.x - drag.startWorld!.x));
-      const ny = Math.round(drag.compStart!.y + (w.y - drag.startWorld!.y));
-      const c = circuit.componentById(drag.compId);
-      if (c && (c.x !== nx || c.y !== ny)) { drag.moved = true; circuit.moveComponent(drag.compId, nx, ny); }
+      const nx = drag.compStart!.x + (w.x - drag.startWorld!.x);
+      const ny = drag.compStart!.y + (w.y - drag.startWorld!.y);
+      drag.moved = true;
+      circuit.moveComponent(drag.compId, nx, ny, false); // smooth; snapped on release
       return;
     }
     hoverPin = pinHitTest(e.offsetX, e.offsetY);
-    canvas.style.cursor = hoverPin ? 'crosshair' : componentHitTest(e.offsetX, e.offsetY) ? 'grab' : 'default';
+    hoverWire = hoverPin ? null : wireHitTest(e.offsetX, e.offsetY);
+    canvas.style.cursor = hoverPin ? 'crosshair'
+      : componentHitTest(e.offsetX, e.offsetY) ? 'grab'
+      : hoverWire ? 'pointer' : 'default';
   });
 
   canvas.addEventListener('pointerdown', (e) => {
@@ -571,16 +652,33 @@ function attachInteraction(): void {
       return;
     }
 
+    // A wire? select it (Delete or double-click removes it).
+    const wireId = wireHitTest(e.offsetX, e.offsetY);
+    if (wireId) { if (wireStart) wireStart = null; circuit.setSelectedWire(wireId); return; }
+
     // Empty space: cancel wiring / deselect, then pan.
     if (wireStart) { wireStart = null; return; }
     circuit.setSelected(null);
+    circuit.setSelectedWire(null);
     drag = { kind: 'pan', startWorld: toWorld(e.offsetX, e.offsetY) };
     canvas.style.cursor = 'grabbing';
   });
 
-  const endDrag = (): void => { drag = { kind: 'none' }; canvas.style.cursor = 'default'; };
+  const endDrag = (): void => {
+    if (drag.kind === 'move' && drag.compId) {
+      const c = circuit.componentById(drag.compId);
+      if (c) circuit.moveComponent(drag.compId, Math.round(c.x), Math.round(c.y), true);
+    }
+    drag = { kind: 'none' };
+    canvas.style.cursor = 'default';
+  };
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
+
+  canvas.addEventListener('dblclick', (e) => {
+    const wireId = wireHitTest(e.offsetX, e.offsetY);
+    if (wireId) circuit.removeWire(wireId);
+  });
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -597,12 +695,15 @@ function attachInteraction(): void {
 
   window.addEventListener('keydown', (e) => {
     const state = circuit.getState();
-    if (!state.selectedId) return;
     const tag = (document.activeElement?.tagName ?? '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.key === 'Escape') { wireStart = null; circuit.setSelected(null); circuit.setSelectedWire(null); return; }
+    if (state.selectedWireId && (e.key === 'Delete' || e.key === 'Backspace')) {
+      circuit.removeWire(state.selectedWireId); e.preventDefault(); return;
+    }
+    if (!state.selectedId) return;
     if (e.key === 'Delete' || e.key === 'Backspace') { circuit.removeComponent(state.selectedId); e.preventDefault(); }
     else if (e.key === 'r' || e.key === 'R') { circuit.rotateComponent(state.selectedId); }
-    else if (e.key === 'Escape') { wireStart = null; circuit.setSelected(null); }
   });
 }
 

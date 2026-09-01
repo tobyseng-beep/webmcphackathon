@@ -6,6 +6,9 @@
 import type { Component, ElementResult, Solution, Wire } from './types';
 import {
   BATTERY_INTERNAL_R,
+  DIODE_RON,
+  DIODE_VF,
+  DIODE_WARN_CURRENT,
   LED_BURN_CURRENT,
   LED_FULL_CURRENT,
   LED_ON_CURRENT,
@@ -17,6 +20,8 @@ const GMIN = 1e-9; // ties every node weakly to reference so nothing floats
 const R_SWITCH_CLOSED = 1e-3;
 const R_OPEN = 1e12;
 const LED_ROFF = 1e8;
+const DIODE_ROFF = 1e8;
+const CAP_SNAP_G = 1e5; // stiff conductance pinning a capacitor to its held voltage for a snapshot
 
 // ---- union-find over pin refs ----
 
@@ -82,9 +87,16 @@ function solveLinear(A: number[][], z: number[]): number[] | null {
 
 function ref(compId: string, pin: string): string { return `${compId}.${pin}`; }
 
-export function solve(components: Component[], wires: Wire[]): Solution {
+interface SolveOpts {
+  dt?: number; // seconds; > 0 advances capacitors one transient step, 0/undefined takes a snapshot
+  capVoltage?: Record<string, number>; // held capacitor voltages entering this solve
+}
+
+export function solve(components: Component[], wires: Wire[], opts: SolveOpts = {}): Solution {
+  const priorCap = opts.capVoltage ?? {};
+  const dt = opts.dt ?? 0;
   const empty: Solution = {
-    ok: false, nodeVoltage: {}, pinNode: {}, results: {}, warnings: [],
+    ok: false, nodeVoltage: {}, pinNode: {}, results: {}, capVoltage: {}, warnings: [],
   };
   if (components.length === 0) return { ...empty, ok: true };
 
@@ -97,7 +109,7 @@ export function solve(components: Component[], wires: Wire[]): Solution {
       ? ['gnd']
       : c.type === 'battery'
         ? ['pos', 'neg']
-        : c.type === 'led'
+        : c.type === 'led' || c.type === 'diode'
           ? ['anode', 'cathode']
           : ['a', 'b'];
     const refs = pins.map((p) => ref(c.id, p));
@@ -150,9 +162,11 @@ export function solve(components: Component[], wires: Wire[]): Solution {
   for (const b of batteries) sourceCol.set(b.id, rows + sourceCount++);
   const N = rows + sourceCount;
 
-  const leds = components.filter((c) => c.type === 'led');
-  const ledState = new Map<string, boolean>(); // true = conducting
-  for (const l of leds) ledState.set(l.id, false);
+  const diodes = components.filter((c) => c.type === 'led' || c.type === 'diode');
+  const diodeState = new Map<string, boolean>(); // true = conducting
+  for (const d of diodes) diodeState.set(d.id, false);
+  const diodeSpec = (c: Component): { vf: number; ron: number } =>
+    c.type === 'led' ? { vf: LED_SPEC[c.color].vf, ron: LED_SPEC[c.color].ron } : { vf: DIODE_VF, ron: DIODE_RON };
 
   const nodeVoltageFor = (x: number[], nodeId: number): number => {
     const r = rowOf(nodeId);
@@ -183,9 +197,9 @@ export function solve(components: Component[], wires: Wire[]): Solution {
         const R = c.closed ? R_SWITCH_CLOSED : R_OPEN;
         const [pa, pb] = pinRefsByComp.get(c.id)!;
         stampR(rowOf(pinNode[pa]), rowOf(pinNode[pb]), 1 / R);
-      } else if (c.type === 'led') {
-        const spec = LED_SPEC[c.color];
-        const on = ledState.get(c.id)!;
+      } else if (c.type === 'led' || c.type === 'diode') {
+        const spec = diodeSpec(c);
+        const on = diodeState.get(c.id)!;
         const anode = rowOf(pinNode[ref(c.id, 'anode')]);
         const cathode = rowOf(pinNode[ref(c.id, 'cathode')]);
         if (on) {
@@ -194,8 +208,20 @@ export function solve(components: Component[], wires: Wire[]): Solution {
           if (anode >= 0) z[anode] += g * spec.vf;
           if (cathode >= 0) z[cathode] -= g * spec.vf;
         } else {
-          stampR(anode, cathode, 1 / LED_ROFF);
+          stampR(anode, cathode, 1 / (c.type === 'led' ? LED_ROFF : DIODE_ROFF));
         }
+      } else if (c.type === 'capacitor') {
+        const cap = Math.max(1e-12, c.value * 1e-6); // µF -> F
+        const [pa, pb] = pinRefsByComp.get(c.id)!;
+        const ra = rowOf(pinNode[pa]);
+        const rb = rowOf(pinNode[pb]);
+        const vprev = priorCap[c.id] ?? 0;
+        // dt > 0: backward-Euler companion (conductance C/dt + current source).
+        // dt == 0: snapshot pinned to the held voltage with a stiff conductance.
+        const geq = dt > 0 ? cap / dt : CAP_SNAP_G;
+        stampR(ra, rb, geq);
+        if (ra >= 0) z[ra] += geq * vprev;
+        if (rb >= 0) z[rb] -= geq * vprev;
       } else if (c.type === 'battery') {
         const pPos = rowOf(pinNode[ref(c.id, 'pos')]);
         const pNeg = rowOf(pinNode[ref(c.id, 'neg')]);
@@ -223,16 +249,16 @@ export function solve(components: Component[], wires: Wire[]): Solution {
     if (!solution) break;
 
     let changed = false;
-    for (const l of leds) {
-      const spec = LED_SPEC[l.color];
-      const va = nodeVoltageFor(solution, pinNode[ref(l.id, 'anode')]);
-      const vc = nodeVoltageFor(solution, pinNode[ref(l.id, 'cathode')]);
+    for (const d of diodes) {
+      const spec = diodeSpec(d);
+      const va = nodeVoltageFor(solution, pinNode[ref(d.id, 'anode')]);
+      const vc = nodeVoltageFor(solution, pinNode[ref(d.id, 'cathode')]);
       const vac = va - vc;
-      const on = ledState.get(l.id)!;
-      if (!on && vac >= spec.vf) { ledState.set(l.id, true); changed = true; }
+      const on = diodeState.get(d.id)!;
+      if (!on && vac >= spec.vf) { diodeState.set(d.id, true); changed = true; }
       else if (on) {
         const i = (vac - spec.vf) / spec.ron;
-        if (i < 0) { ledState.set(l.id, false); changed = true; }
+        if (i < 0) { diodeState.set(d.id, false); changed = true; }
       }
     }
     if (!changed) break;
@@ -244,6 +270,7 @@ export function solve(components: Component[], wires: Wire[]): Solution {
       ok: false,
       reason: 'The circuit could not be solved (it may contain a short across a source with no resistance).',
       pinNode,
+      capVoltage: priorCap,
       warnings: ['Could not solve the circuit — check for a battery shorted directly across itself.'],
     };
   }
@@ -253,6 +280,7 @@ export function solve(components: Component[], wires: Wire[]): Solution {
   for (let id = 0; id < nextNode; id++) nodeVoltage[id] = nodeVoltageFor(x, id);
 
   const results: Record<string, ElementResult> = {};
+  const capVoltageOut: Record<string, number> = {};
   const warnings: string[] = [];
 
   for (const c of components) {
@@ -279,12 +307,35 @@ export function solve(components: Component[], wires: Wire[]): Solution {
       results[c.id] = res;
       continue;
     }
+    if (c.type === 'diode') {
+      const spec = diodeSpec(c);
+      const va = nodeVoltage[pinNode[ref(c.id, 'anode')]];
+      const vc = nodeVoltage[pinNode[ref(c.id, 'cathode')]];
+      const vac = va - vc;
+      const on = diodeState.get(c.id)!;
+      const i = on ? (vac - spec.vf) / spec.ron : vac / DIODE_ROFF;
+      const res: ElementResult = { current: i, voltage: vac, power: Math.max(0, vac * i) };
+      if (i > DIODE_WARN_CURRENT) res.warning = 'Very high current through the diode — add a series resistor.';
+      else if (!on && vac < -0.5) res.warning = 'Reverse-biased: a diode blocks current from cathode to anode.';
+      results[c.id] = res;
+      continue;
+    }
+    if (c.type === 'capacitor') {
+      const [pa, pb] = pinRefsByComp.get(c.id)!;
+      const vab = nodeVoltage[pinNode[pa]] - nodeVoltage[pinNode[pb]];
+      const cap = Math.max(1e-12, c.value * 1e-6);
+      const vprev = priorCap[c.id] ?? 0;
+      const current = dt > 0 ? (cap * (vab - vprev)) / dt : CAP_SNAP_G * (vab - vprev);
+      capVoltageOut[c.id] = vab;
+      results[c.id] = { current, voltage: vab, power: Math.max(0, vab * current) };
+      continue;
+    }
     if (c.type === 'led') {
       const spec = LED_SPEC[c.color];
       const va = nodeVoltage[pinNode[ref(c.id, 'anode')]];
       const vc = nodeVoltage[pinNode[ref(c.id, 'cathode')]];
       const vac = va - vc;
-      const on = ledState.get(c.id)!;
+      const on = diodeState.get(c.id)!;
       const i = on ? (vac - spec.vf) / spec.ron : vac / LED_ROFF;
       const power = Math.max(0, vac * i);
       const brightness = on ? Math.max(0, Math.min(1, (i - LED_ON_CURRENT) / (LED_FULL_CURRENT - LED_ON_CURRENT))) : 0;
@@ -325,5 +376,5 @@ export function solve(components: Component[], wires: Wire[]): Solution {
     warnings.push('No current is flowing — the circuit is probably open (a wire, switch or connection is missing).');
   }
 
-  return { ok: true, nodeVoltage, pinNode, results, warnings };
+  return { ok: true, nodeVoltage, pinNode, results, capVoltage: capVoltageOut, warnings };
 }

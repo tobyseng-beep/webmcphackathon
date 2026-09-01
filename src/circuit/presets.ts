@@ -135,6 +135,41 @@ export const PRESETS: Record<string, Preset> = {
       });
     },
   },
+  rc_charging: {
+    title: 'RC charging curve',
+    note: 'A capacitor charging through a resistor from a 9 V supply, gated by a switch. Reset the simulation, then close the switch and watch the capacitor voltage rise toward 9 V along the classic exponential curve. The time constant is R×C — here 10 kΩ × 100 µF = 1 second, so it is about 63% charged after 1 s and nearly full after 5 s. Change R or C to make it charge faster or slower.',
+    build: () => {
+      circuit.clearAll();
+      const bat = place('battery', 0, 2, { rotation: 90, value: 9 });
+      const sw = place('switch', 2, 1, {});
+      const res = place('resistor', 4, 1, { value: 10000 });
+      const cap = place('capacitor', 6, 2, { rotation: 90, value: 100 });
+      const gnd = place('ground', 0, 5, {});
+      circuit.connect(`${bat.id}.pos`, `${sw.id}.a`);
+      circuit.connect(`${sw.id}.b`, `${res.id}.a`);
+      circuit.connect(`${res.id}.b`, `${cap.id}.a`);
+      circuit.connect(`${cap.id}.b`, `${bat.id}.neg`);
+      circuit.connect(`${bat.id}.neg`, `${gnd.id}.gnd`);
+      circuit.toggleSwitch(sw.id, true);
+    },
+  },
+
+  diode_protection: {
+    title: 'Diode blocks reverse current',
+    note: 'A diode in series with an LED and resistor. With the battery this way round the diode conducts (about 0.7 V across it) and the LED lights. Flip the battery voltage negative, or reverse the diode, and it blocks — nothing lights. This is how a diode protects a circuit from reversed power.',
+    build: () => {
+      circuit.clearAll();
+      const bat = place('battery', 0, 2, { rotation: 90, value: 9 });
+      const d = place('diode', 2, 1, {});
+      const res = place('resistor', 4, 1, { value: 330 });
+      const led = place('led', 6, 2, { rotation: 90, color: 'blue' });
+      circuit.connect(`${bat.id}.pos`, `${d.id}.anode`);
+      circuit.connect(`${d.id}.cathode`, `${res.id}.a`);
+      circuit.connect(`${res.id}.b`, `${led.id}.anode`);
+      circuit.connect(`${led.id}.cathode`, `${bat.id}.neg`);
+    },
+  },
+
 };
 
 export function presetNames(): { name: string; title: string }[] {

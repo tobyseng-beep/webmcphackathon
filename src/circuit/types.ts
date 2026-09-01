@@ -8,6 +8,8 @@ export type ComponentType =
   | 'led'
   | 'lamp'
   | 'switch'
+  | 'capacitor'
+  | 'diode'
   | 'ground';
 
 export type Rotation = 0 | 90 | 180 | 270;
@@ -60,6 +62,7 @@ export interface Solution {
   nodeVoltage: Record<number, number>;
   pinNode: Record<string, number>; // pin ref -> node id
   results: Record<string, ElementResult>; // component id -> result
+  capVoltage: Record<string, number>; // capacitor id -> voltage across it after this solve
   warnings: string[];
 }
 
@@ -81,6 +84,7 @@ export interface CircuitState {
   components: Component[];
   wires: Wire[];
   selectedId: string | null;
+  selectedWireId: string | null;
   running: boolean;
   view: View;
   solution: Solution | null;

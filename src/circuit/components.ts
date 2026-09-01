@@ -11,7 +11,7 @@ export interface CatalogEntry {
   blurb: string; // shown in the palette tooltip and returned to the agent
   pins: PinDef[];
   defaultValue: number; // volts or ohms; 0 where unused
-  unit: '' | 'V' | 'Ω';
+  unit: '' | 'V' | 'Ω' | 'µF';
   valueMin: number;
   valueMax: number;
   polar: boolean; // does pin order matter electrically?
@@ -86,6 +86,31 @@ export const CATALOG: Record<ComponentType, CatalogEntry> = {
     valueMax: 0,
     polar: false,
   },
+  capacitor: {
+    type: 'capacitor',
+    title: 'Capacitor',
+    blurb: 'Stores charge. Set its value in microfarads. It blocks steady direct current but passes the surge while it charges, so it acts like a wire the instant power is applied and like an open circuit once full. Pair it with a resistor to watch the classic RC charging curve build up over time.',
+    pins: HORIZONTAL,
+    defaultValue: 100,
+    unit: 'µF',
+    valueMin: 0.1,
+    valueMax: 10000,
+    polar: false,
+  },
+  diode: {
+    type: 'diode',
+    title: 'Diode',
+    blurb: 'A one-way valve for current. It conducts from anode to cathode once about 0.7 V is across it, and blocks the other way. Unlike an LED it gives off no light; use it to protect a circuit or to rectify. It is polar, so the direction matters.',
+    pins: [
+      { name: 'anode', dx: -1, dy: 0 },
+      { name: 'cathode', dx: 1, dy: 0 },
+    ],
+    defaultValue: 0,
+    unit: '',
+    valueMin: 0,
+    valueMax: 0,
+    polar: true,
+  },
   ground: {
     type: 'ground',
     title: 'Ground',
@@ -100,7 +125,7 @@ export const CATALOG: Record<ComponentType, CatalogEntry> = {
 };
 
 export const COMPONENT_ORDER: ComponentType[] = [
-  'battery', 'resistor', 'led', 'lamp', 'switch', 'ground',
+  'battery', 'resistor', 'led', 'lamp', 'switch', 'capacitor', 'diode', 'ground',
 ];
 
 // Forward voltage and on-resistance per LED colour. These set where the LED
@@ -117,7 +142,10 @@ export const LED_ON_CURRENT = 0.001; // amps at which a glow becomes visible
 export const LED_FULL_CURRENT = 0.018; // amps for full brightness
 export const LED_WARN_CURRENT = 0.03; // amps above which we warn
 export const LED_BURN_CURRENT = 0.06; // amps we call "burning out"
-export const BATTERY_INTERNAL_R = 0.5; // ohms, keeps a dead short finite
+export const BATTERY_INTERNAL_R = 0.05; // ohms; keeps a dead short finite while terminals read close to nominal
+export const DIODE_VF = 0.7; // silicon forward drop
+export const DIODE_RON = 5; // on-resistance
+export const DIODE_WARN_CURRENT = 1.0; // amps
 
 function rotate(dx: number, dy: number, rotation: Rotation): Vec2 {
   switch (rotation) {

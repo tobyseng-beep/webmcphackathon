@@ -90,6 +90,8 @@ const ICONS: Record<ComponentType, string> = {
   lamp: '<line x1="4" y1="15" x2="12" y2="15" stroke="currentColor" stroke-width="2"/><circle cx="23" cy="15" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M17 9 L29 21 M17 21 L29 9" stroke="currentColor" stroke-width="1.6"/><line x1="34" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
   switch: '<line x1="4" y1="17" x2="16" y2="17" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="17" r="2.5" fill="currentColor"/><circle cx="32" cy="17" r="2.5" fill="currentColor"/><line x1="16" y1="17" x2="31" y2="7" stroke="currentColor" stroke-width="2"/><line x1="32" y1="17" x2="44" y2="17" stroke="currentColor" stroke-width="2"/>',
   ground: '<line x1="23" y1="2" x2="23" y2="14" stroke="currentColor" stroke-width="2"/><line x1="13" y1="14" x2="33" y2="14" stroke="currentColor" stroke-width="2"/><line x1="17" y1="19" x2="29" y2="19" stroke="currentColor" stroke-width="2"/><line x1="20" y1="24" x2="26" y2="24" stroke="currentColor" stroke-width="2"/>',
+  capacitor: '<line x1="4" y1="15" x2="20" y2="15" stroke="currentColor" stroke-width="2"/><line x1="20" y1="6" x2="20" y2="24" stroke="currentColor" stroke-width="2.4"/><line x1="28" y1="6" x2="28" y2="24" stroke="currentColor" stroke-width="2.4"/><line x1="28" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  diode: '<line x1="4" y1="15" x2="16" y2="15" stroke="currentColor" stroke-width="2"/><path d="M16 7 L16 23 L30 15 Z" fill="currentColor" fill-opacity="0.55" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><line x1="30" y1="7" x2="30" y2="23" stroke="currentColor" stroke-width="2"/><line x1="30" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
 };
 
 for (const type of COMPONENT_ORDER) {
@@ -224,10 +226,22 @@ function syncInspector(c: Component): void {
 }
 
 function renderInspector(): void {
-  const id = circuit.getState().selectedId;
+  const state = circuit.getState();
+  if (state.selectedWireId) {
+    inspectorFor = null;
+    const w = state.wires.find((x) => x.id === state.selectedWireId);
+    inspectorPanel.innerHTML = `<div class="insp-title"><span class="insp-type">Wire</span><span class="insp-id">${state.selectedWireId}</span></div>`
+      + `<p class="empty" style="padding-left:0">${w ? `${w.from} ↔ ${w.to}` : ''}</p>`
+      + '<div class="insp-actions"><button id="insp-wire-del" class="danger">Delete wire</button></div>';
+    inspectorPanel.querySelector<HTMLButtonElement>('#insp-wire-del')?.addEventListener('click', () => {
+      if (state.selectedWireId) circuit.removeWire(state.selectedWireId);
+    });
+    return;
+  }
+  const id = state.selectedId;
   if (!id) {
     inspectorFor = null;
-    inspectorPanel.innerHTML = '<p class="empty">Select a part on the board to edit it. Press <code>R</code> to rotate, <code>Delete</code> to remove.</p>';
+    inspectorPanel.innerHTML = '<p class="empty">Select a part on the board to edit it, or click a wire to remove it. Press <code>R</code> to rotate, <code>Delete</code> to remove.</p>';
     return;
   }
   const c = circuit.componentById(id);
@@ -261,6 +275,10 @@ simToggle.addEventListener('click', () => {
   circuit.setRunning(running);
   simToggle.classList.toggle('paused', !running);
   simLabel.textContent = running ? 'Simulating' : 'Paused';
+});
+
+mustQuery<HTMLButtonElement>('#sim-reset').addEventListener('click', () => {
+  circuit.resetSimulation();
 });
 
 /* ---------- presets ---------- */

@@ -317,6 +317,17 @@ const toolDefinitions = [
   },
 
   {
+    name: 'reset_simulation',
+    description:
+      'Discharge every capacitor and restart the simulation from time zero. Use this before demonstrating an RC charging curve so the capacitor starts empty, or to replay a transient from the beginning. Has no effect on a purely resistive circuit.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      const result = circuit.resetSimulation();
+      return { ...result, ...summary() };
+    },
+  },
+
+  {
     name: 'load_preset',
     description:
       'Load a ready-made starter circuit — parts, values and wiring in one call — instead of building a standard scenario piece by piece. Call with no arguments to list what is available. The returned note explains what the circuit shows and which value is worth changing, so read it before you start teaching.',
