@@ -18,6 +18,7 @@ function reading(id: string): Record<string, unknown> | undefined {
   };
   if (res.lit !== undefined) out.lit = res.lit;
   if (res.brightness !== undefined) out.brightness = +res.brightness.toFixed(2);
+  if (res.meter !== undefined) out.meter = +res.meter.toFixed(4);
   if (res.warning) out.warning = res.warning;
   return out;
 }
@@ -200,6 +201,28 @@ const toolDefinitions = [
     },
     execute: async (args: Record<string, unknown>) => {
       const result = circuit.setColor(String(args.id), args.color as Component['color']);
+      return result.ok ? { ...result, ...summary() } : result;
+    },
+  },
+
+  {
+    name: 'configure',
+    description:
+      'Set a component-specific setting that is not its main value: the wiper position of a potentiometer (0 = fully toward pin a, 1 = fully toward pin b) or the frequency of an AC source in hertz. For example configure({id:"pot1", wiper:0.25}) taps off a quarter of the way, and configure({id:"ac1", frequency:2}) makes the AC source oscillate at 2 Hz. Pass only the field that applies to the part.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Component id.' },
+        wiper: { type: 'number', description: 'Potentiometer wiper, 0 to 1.' },
+        frequency: { type: 'number', description: 'AC source frequency in Hz.' },
+      },
+      required: ['id'],
+    },
+    execute: async (args: Record<string, unknown>) => {
+      const id = String(args.id);
+      let result: { ok: boolean; error?: string } = { ok: false, error: 'Nothing to configure — pass wiper or frequency.' };
+      if (args.wiper !== undefined) result = circuit.setWiper(id, Number(args.wiper));
+      else if (args.frequency !== undefined) result = circuit.setFrequency(id, Number(args.frequency));
       return result.ok ? { ...result, ...summary() } : result;
     },
   },

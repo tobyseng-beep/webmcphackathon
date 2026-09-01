@@ -7,7 +7,7 @@ import * as circuit from './store';
 import { TOOLS, registerTools } from './tools';
 import { PRESETS } from './presets';
 import { CATALOG, COMPONENT_ORDER, LED_SPEC } from './components';
-import { initCircuitRender } from './render';
+import { initCircuitRender, clientToGrid } from './render';
 import { mustQuery } from '../dom';
 import type { Component, ComponentType, LedColor } from './types';
 
@@ -92,7 +92,42 @@ const ICONS: Record<ComponentType, string> = {
   ground: '<line x1="23" y1="2" x2="23" y2="14" stroke="currentColor" stroke-width="2"/><line x1="13" y1="14" x2="33" y2="14" stroke="currentColor" stroke-width="2"/><line x1="17" y1="19" x2="29" y2="19" stroke="currentColor" stroke-width="2"/><line x1="20" y1="24" x2="26" y2="24" stroke="currentColor" stroke-width="2"/>',
   capacitor: '<line x1="4" y1="15" x2="20" y2="15" stroke="currentColor" stroke-width="2"/><line x1="20" y1="6" x2="20" y2="24" stroke="currentColor" stroke-width="2.4"/><line x1="28" y1="6" x2="28" y2="24" stroke="currentColor" stroke-width="2.4"/><line x1="28" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
   diode: '<line x1="4" y1="15" x2="16" y2="15" stroke="currentColor" stroke-width="2"/><path d="M16 7 L16 23 L30 15 Z" fill="currentColor" fill-opacity="0.55" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><line x1="30" y1="7" x2="30" y2="23" stroke="currentColor" stroke-width="2"/><line x1="30" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  inductor: '<line x1="4" y1="17" x2="12" y2="17" stroke="currentColor" stroke-width="2"/><path d="M12 17 a4 4 0 0 1 8 0 a4 4 0 0 1 8 0 a4 4 0 0 1 8 0" fill="none" stroke="currentColor" stroke-width="2"/><line x1="36" y1="17" x2="44" y2="17" stroke="currentColor" stroke-width="2"/>',
+  potentiometer: '<polyline points="6,20 12,20 15,12 21,28 27,12 33,28 36,20 42,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><line x1="24" y1="2" x2="24" y2="12" stroke="currentColor" stroke-width="2"/><path d="M24 12 l-3 -4 l6 0 z" fill="currentColor"/>',
+  currentsource: '<circle cx="24" cy="15" r="11" fill="none" stroke="currentColor" stroke-width="2"/><line x1="24" y1="9" x2="24" y2="21" stroke="currentColor" stroke-width="2"/><path d="M24 9 l-3 4 l6 0 z" fill="currentColor"/><line x1="4" y1="15" x2="13" y2="15" stroke="currentColor" stroke-width="2"/><line x1="35" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  acsource: '<circle cx="24" cy="15" r="11" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 15 q3 -6 6 0 t6 0" fill="none" stroke="currentColor" stroke-width="2"/><line x1="4" y1="15" x2="13" y2="15" stroke="currentColor" stroke-width="2"/><line x1="35" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  fuse: '<line x1="4" y1="15" x2="12" y2="15" stroke="currentColor" stroke-width="2"/><rect x="12" y="10" width="24" height="10" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="14" y1="15" x2="34" y2="15" stroke="currentColor" stroke-width="1.6"/><line x1="36" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  voltmeter: '<line x1="4" y1="15" x2="13" y2="15" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="15" r="11" fill="none" stroke="currentColor" stroke-width="2"/><text x="24" y="20" font-size="12" font-weight="700" text-anchor="middle" fill="currentColor">V</text><line x1="35" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  ammeter: '<line x1="4" y1="15" x2="13" y2="15" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="15" r="11" fill="none" stroke="currentColor" stroke-width="2"/><text x="24" y="20" font-size="12" font-weight="700" text-anchor="middle" fill="currentColor">A</text><line x1="35" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  motor: '<line x1="4" y1="15" x2="13" y2="15" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="15" r="11" fill="none" stroke="currentColor" stroke-width="2"/><text x="24" y="20" font-size="12" font-weight="700" text-anchor="middle" fill="currentColor">M</text><line x1="35" y1="15" x2="44" y2="15" stroke="currentColor" stroke-width="2"/>',
+  buzzer: '<line x1="6" y1="15" x2="14" y2="15" stroke="currentColor" stroke-width="2"/><path d="M14 8 h8 l8 7 -8 7 h-8 z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><line x1="34" y1="15" x2="42" y2="15" stroke="currentColor" stroke-width="2"/>',
 };
+
+function startPaletteDrag(type: ComponentType, e: PointerEvent): void {
+  e.preventDefault();
+  const ghost = document.createElement('div');
+  ghost.className = 'drag-ghost';
+  ghost.innerHTML = `<svg viewBox="0 0 48 30" aria-hidden="true">${ICONS[type]}</svg>`;
+  document.body.append(ghost);
+  const move = (ev: PointerEvent): void => {
+    ghost.style.left = `${ev.clientX}px`;
+    ghost.style.top = `${ev.clientY}px`;
+    ghost.classList.toggle('over-canvas', clientToGrid(ev.clientX, ev.clientY) !== null);
+  };
+  const up = (ev: PointerEvent): void => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    ghost.remove();
+    const grid = clientToGrid(ev.clientX, ev.clientY);
+    // Dropped on the canvas -> place there; a plain click (released on the
+    // palette) falls back to auto-placement.
+    if (grid) circuit.addComponent(type, { x: grid.x, y: grid.y });
+    else circuit.addComponent(type);
+  };
+  move(e);
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
 
 for (const type of COMPONENT_ORDER) {
   const entry = CATALOG[type];
@@ -101,7 +136,7 @@ for (const type of COMPONENT_ORDER) {
   btn.type = 'button';
   btn.title = entry.blurb;
   btn.innerHTML = `<svg viewBox="0 0 48 30" aria-hidden="true">${ICONS[type]}</svg><span>${entry.title}</span>`;
-  btn.addEventListener('click', () => { circuit.addComponent(type); });
+  btn.addEventListener('pointerdown', (e) => startPaletteDrag(type, e));
   paletteEl.append(btn);
 }
 
@@ -135,7 +170,7 @@ function buildInspector(c: Component): void {
   if (entry.unit) {
     const row = document.createElement('div');
     row.className = 'insp-row';
-    const isLog = entry.unit === 'Ω';
+    const isLog = entry.unit === 'Ω' || entry.unit === 'mH';
     row.innerHTML = `
       <label for="insp-num">Value</label>
       <div class="insp-value">
@@ -168,6 +203,28 @@ function buildInspector(c: Component): void {
     const sel = row.querySelector<HTMLSelectElement>('#insp-color')!;
     sel.value = c.color;
     sel.addEventListener('change', () => circuit.setColor(c.id, sel.value as LedColor));
+  }
+
+  if (c.type === 'potentiometer') {
+    const row = document.createElement('div');
+    row.className = 'insp-row';
+    row.innerHTML = `<label for="insp-wiper">Wiper position</label>
+      <input id="insp-wiper" type="range" min="0" max="100" step="1" />`;
+    inspectorPanel.append(row);
+    const wr = row.querySelector<HTMLInputElement>('#insp-wiper')!;
+    wr.value = String(Math.round(c.wiper * 100));
+    wr.addEventListener('input', () => circuit.setWiper(c.id, Number(wr.value) / 100));
+  }
+
+  if (c.type === 'acsource') {
+    const row = document.createElement('div');
+    row.className = 'insp-row';
+    row.innerHTML = `<label for="insp-freq">Frequency</label>
+      <div class="insp-value"><input id="insp-freq" type="number" step="any" /><span class="unit">Hz</span></div>`;
+    inspectorPanel.append(row);
+    const fr = row.querySelector<HTMLInputElement>('#insp-freq')!;
+    fr.value = String(c.freq);
+    fr.addEventListener('input', () => { const v = Number(fr.value); if (Number.isFinite(v)) circuit.setFrequency(c.id, v); });
   }
 
   const actions = document.createElement('div');
@@ -211,15 +268,26 @@ function syncInspector(c: Component): void {
     const toggle = inspectorPanel.querySelector<HTMLButtonElement>('.insp-actions button');
     if (toggle) toggle.textContent = c.closed ? 'Open switch' : 'Close switch';
   }
+  if (c.type === 'potentiometer') {
+    const wr = inspectorPanel.querySelector<HTMLInputElement>('#insp-wiper');
+    if (wr && document.activeElement !== wr) wr.value = String(Math.round(c.wiper * 100));
+  }
+  if (c.type === 'acsource') {
+    const fr = inspectorPanel.querySelector<HTMLInputElement>('#insp-freq');
+    if (fr && document.activeElement !== fr) fr.value = String(c.freq);
+  }
   const reading = inspectorPanel.querySelector<HTMLDivElement>('#insp-reading');
   if (!reading) return;
   const res = circuit.getState().solution?.results[c.id];
   if (!res || c.type === 'ground') { reading.textContent = c.type === 'ground' ? 'Reference node (0 V).' : 'No reading yet.'; return; }
   const parts: string[] = [];
+  if (res.meter !== undefined) {
+    parts.push(c.type === 'voltmeter' ? `reads ${res.meter.toFixed(2)} V` : `reads ${(res.meter * 1000).toFixed(2)} mA`);
+  }
   parts.push(`I = ${(res.current * 1000).toFixed(2)} mA`);
   parts.push(`V = ${res.voltage.toFixed(2)} V`);
   if (res.power > 1e-6) parts.push(`P = ${(res.power * 1000).toFixed(1)} mW`);
-  if (res.lit) parts.push('<span class="lit">lit ●</span>');
+  if (res.lit) parts.push(c.type === 'motor' ? '<span class="lit">spinning ●</span>' : c.type === 'buzzer' ? '<span class="lit">sounding ●</span>' : '<span class="lit">lit ●</span>');
   let html = parts.join('<br>');
   if (res.warning) html += `<br><span class="warn">${res.warning}</span>`;
   reading.innerHTML = html;

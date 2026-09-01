@@ -170,6 +170,64 @@ export const PRESETS: Record<string, Preset> = {
     },
   },
 
+  pot_dimmer: {
+    title: 'Potentiometer LED dimmer',
+    note: 'A potentiometer feeding an LED through a resistor. Slide the wiper (configure with a wiper from 0 to 1, or drag the slider) and the LED brightens and dims as the tapped voltage changes. This is exactly how a real dimmer knob works.',
+    build: () => {
+      circuit.clearAll();
+      const bat = place('battery', 0, 2, { rotation: 90, value: 9 });
+      const pot = place('potentiometer', 3, 1, { value: 10000 });
+      const res = place('resistor', 5, 1, { value: 330 });
+      const led = place('led', 7, 2, { rotation: 90, color: 'red' });
+      const gnd = place('ground', 0, 5, {});
+      circuit.connect(`${bat.id}.pos`, `${pot.id}.a`);
+      circuit.connect(`${pot.id}.b`, `${bat.id}.neg`);
+      circuit.connect(`${pot.id}.wiper`, `${res.id}.a`);
+      circuit.connect(`${res.id}.b`, `${led.id}.anode`);
+      circuit.connect(`${led.id}.cathode`, `${bat.id}.neg`);
+      circuit.connect(`${bat.id}.neg`, `${gnd.id}.gnd`);
+      circuit.setWiper(pot.id, 0.7);
+    },
+  },
+
+  rl_circuit: {
+    title: 'RL current ramp',
+    note: 'An inductor charging through a resistor, gated by a switch. Reset the simulation, then close the switch: the inductor resists the sudden change, so the current starts at zero and ramps up along an exponential curve toward its final value (V/R). The time constant is L/R.',
+    build: () => {
+      circuit.clearAll();
+      const bat = place('battery', 0, 2, { rotation: 90, value: 9 });
+      const sw = place('switch', 2, 1, {});
+      const res = place('resistor', 4, 1, { value: 100 });
+      const ind = place('inductor', 6, 2, { rotation: 90, value: 2000 });
+      const gnd = place('ground', 0, 5, {});
+      circuit.connect(`${bat.id}.pos`, `${sw.id}.a`);
+      circuit.connect(`${sw.id}.b`, `${res.id}.a`);
+      circuit.connect(`${res.id}.b`, `${ind.id}.a`);
+      circuit.connect(`${ind.id}.b`, `${bat.id}.neg`);
+      circuit.connect(`${bat.id}.neg`, `${gnd.id}.gnd`);
+      circuit.toggleSwitch(sw.id, true);
+    },
+  },
+
+  ac_demo: {
+    title: 'AC source with a meter',
+    note: 'A sine-wave source driving a resistor, with a voltmeter across it and an ammeter in series. Keep the simulation running and watch the readings swing positive and negative each cycle. Raise the frequency with configure to speed it up.',
+    build: () => {
+      circuit.clearAll();
+      const ac = place('acsource', 0, 2, { rotation: 90, value: 5 });
+      const am = place('ammeter', 2, 1, {});
+      const res = place('resistor', 4, 1, { value: 1000 });
+      const vm = place('voltmeter', 4, 4, { rotation: 90 });
+      const gnd = place('ground', 0, 5, {});
+      circuit.connect(`${ac.id}.pos`, `${am.id}.a`);
+      circuit.connect(`${am.id}.b`, `${res.id}.a`);
+      circuit.connect(`${res.id}.b`, `${ac.id}.neg`);
+      circuit.connect(`${res.id}.a`, `${vm.id}.a`);
+      circuit.connect(`${res.id}.b`, `${vm.id}.b`);
+      circuit.connect(`${ac.id}.neg`, `${gnd.id}.gnd`);
+    },
+  },
+
 };
 
 export function presetNames(): { name: string; title: string }[] {

@@ -33,6 +33,8 @@ const state: CircuitState = {
 // Held capacitor voltages, carried between transient steps (kept out of the
 // serialisable-ish state object because it is solver bookkeeping).
 let capVoltage: Record<string, number> = {};
+let indCurrent: Record<string, number> = {};
+let simTime = 0;
 
 type Listener = (reason: ChangeReason, state: CircuitState) => void;
 const listeners = new Set<Listener>();
@@ -41,7 +43,9 @@ const counters = new Map<ComponentType, number>();
 let wireCounter = 0;
 
 const ID_PREFIX: Record<ComponentType, string> = {
-  battery: 'bat', resistor: 'r', led: 'led', lamp: 'lamp', switch: 'sw', capacitor: 'cap', diode: 'd', ground: 'gnd',
+  battery: 'bat', resistor: 'r', led: 'led', lamp: 'lamp', switch: 'sw',
+  capacitor: 'cap', inductor: 'ind', diode: 'd', potentiometer: 'pot', currentsource: 'isrc',
+  acsource: 'ac', fuse: 'fuse', voltmeter: 'vm', ammeter: 'am', motor: 'mot', buzzer: 'buz', ground: 'gnd',
 };
 
 function notify(reason: ChangeReason): void {
@@ -64,16 +68,29 @@ function nextId(type: ComponentType): string {
   return `${ID_PREFIX[type]}${n}`;
 }
 
-export function hasCapacitors(): boolean {
-  return state.components.some((c) => c.type === 'capacitor');
+export function needsTransient(): boolean {
+  return state.components.some(
+    (c) => c.type === 'capacitor' || c.type === 'inductor' || c.type === 'acsource',
+  );
 }
 
 // One solve step. dt === 0 takes an instantaneous snapshot; dt > 0 advances any
-// capacitors one transient step. Every mutating function ends by calling
-// resolve(), which is a dt === 0 snapshot.
+// reactive parts one transient step. A blown fuse is detected here: if a fuse
+// exceeds its rating it opens and the circuit is re-solved once.
 function step(dt: number): Solution {
-  const solution = solve(state.components, state.wires, { dt, capVoltage });
-  if (solution.ok) capVoltage = { ...capVoltage, ...solution.capVoltage };
+  let solution = solve(state.components, state.wires, { dt, capVoltage, indCurrent, time: simTime });
+  if (solution.ok) {
+    let anyBlew = false;
+    for (const c of state.components) {
+      if (c.type === 'fuse' && !c.blown) {
+        const i = solution.results[c.id]?.current ?? 0;
+        if (Math.abs(i) > c.value) { c.blown = true; anyBlew = true; }
+      }
+    }
+    if (anyBlew) solution = solve(state.components, state.wires, { dt, capVoltage, indCurrent, time: simTime });
+    capVoltage = { ...capVoltage, ...solution.capVoltage };
+    indCurrent = { ...indCurrent, ...solution.indCurrent };
+  }
   state.solution = solution;
   notify('solution');
   return solution;
@@ -83,15 +100,20 @@ export function resolve(): Solution {
   return step(0);
 }
 
-// Called by the render loop to move time forward while a capacitor is present.
+// Called by the render loop to move time forward while a reactive part is present.
 export function advance(dt: number): void {
-  if (!state.running || !hasCapacitors()) return;
-  step(Math.min(0.05, Math.max(0, dt)));
+  if (!state.running || !needsTransient()) return;
+  const clamped = Math.min(0.05, Math.max(0, dt));
+  simTime += clamped;
+  step(clamped);
 }
 
 // Reset the transient: discharge every capacitor and re-solve from t = 0.
 export function resetSimulation(): { ok: true } {
   capVoltage = {};
+  indCurrent = {};
+  simTime = 0;
+  for (const c of state.components) if (c.type === 'fuse') c.blown = false;
   resolve();
   return { ok: true };
 }
@@ -127,11 +149,15 @@ export function addComponent(type: ComponentType, opts: AddOptions = {}): { ok: 
     x: Math.round(place.x), y: Math.round(place.y),
     rotation: opts.rotation ?? 0,
     value,
-    closed: type === 'switch' ? false : false,
+    closed: false,
     color,
+    wiper: 0.5,
+    freq: 1,
+    blown: false,
     label: opts.label ?? null,
   };
   if (type === 'capacitor') capVoltage[id] = 0;
+  if (type === 'inductor') indCurrent[id] = 0;
   state.components.push(component);
   state.selectedId = id;
   state.selectedWireId = null;
@@ -151,6 +177,7 @@ export function removeComponent(id: string): { ok: boolean; error?: string } {
   if (idx === -1) return { ok: false, error: `No component with id "${id}".` };
   state.components.splice(idx, 1);
   delete capVoltage[id];
+  delete indCurrent[id];
   // Drop any wires that referenced this component's pins.
   state.wires = state.wires.filter((w) => !w.from.startsWith(`${id}.`) && !w.to.startsWith(`${id}.`));
   if (state.selectedId === id) state.selectedId = null;
@@ -199,6 +226,24 @@ export function setColor(id: string, color: LedColor): { ok: boolean; error?: st
   notify('components');
   resolve();
   return { ok: true };
+}
+
+export function setWiper(id: string, wiper: number): { ok: boolean; error?: string; wiper?: number } {
+  const c = componentById(id);
+  if (!c || c.type !== 'potentiometer') return { ok: false, error: `No potentiometer with id "${id}".` };
+  c.wiper = Math.min(1, Math.max(0, wiper));
+  notify('components');
+  resolve();
+  return { ok: true, wiper: c.wiper };
+}
+
+export function setFrequency(id: string, freq: number): { ok: boolean; error?: string; freq?: number } {
+  const c = componentById(id);
+  if (!c || c.type !== 'acsource') return { ok: false, error: `No AC source with id "${id}".` };
+  c.freq = Math.min(1000, Math.max(0.01, freq));
+  notify('components');
+  resolve();
+  return { ok: true, freq: c.freq };
 }
 
 export function toggleSwitch(id: string, closed?: boolean): { ok: boolean; error?: string; closed?: boolean } {
@@ -263,6 +308,8 @@ export function clearAll(): { ok: true } {
   state.selectedId = null;
   state.selectedWireId = null;
   capVoltage = {};
+  indCurrent = {};
+  simTime = 0;
   counters.clear();
   wireCounter = 0;
   notify('components');

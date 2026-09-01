@@ -284,6 +284,117 @@ function drawDiode(ax: Axis): void {
   line(pt(ax.mid, ax, t, -t), pt(ax.mid, ax, t, t)); // cathode bar
 }
 
+function drawInductor(ax: Axis): void {
+  const bodyHalf = Math.min(ax.len * 0.32, 26);
+  drawLeads(ax, bodyHalf);
+  ctx.strokeStyle = COLORS.body;
+  ctx.lineWidth = 2.4;
+  const humps = 4;
+  const span = bodyHalf * 2;
+  const r = span / (humps * 2);
+  ctx.beginPath();
+  for (let i = 0; i < humps; i++) {
+    const cAlong = -bodyHalf + r + i * 2 * r;
+    const c = pt(ax.mid, ax, cAlong, 0);
+    // half-circle bump on the +perp side
+    const start = pt(ax.mid, ax, cAlong - r, 0);
+    ctx.moveTo(start.x, start.y);
+    for (let a = 0; a <= 12; a++) {
+      const ang = Math.PI * (a / 12);
+      const along = cAlong - r * Math.cos(ang);
+      const across = -r * Math.sin(ang);
+      const pp = pt(ax.mid, ax, along, across);
+      if (a === 0) ctx.moveTo(pp.x, pp.y); else ctx.lineTo(pp.x, pp.y);
+    }
+    void c;
+  }
+  ctx.stroke();
+}
+
+function drawCircleGlyph(ax: Axis, letter: string, glow?: { color: string; brightness: number }): void {
+  const r = Math.min(ax.len * 0.24, 16);
+  drawLeads(ax, r);
+  if (glow && glow.brightness > 0) {
+    const g = ctx.createRadialGradient(ax.mid.x, ax.mid.y, 0, ax.mid.x, ax.mid.y, r * 3);
+    g.addColorStop(0, hexAlpha(glow.color, 0.2 + 0.5 * glow.brightness));
+    g.addColorStop(1, hexAlpha(glow.color, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(ax.mid.x, ax.mid.y, r * 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = COLORS.body; ctx.lineWidth = 2.2; ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(ax.mid.x, ax.mid.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = COLORS.body;
+  ctx.font = '700 14px ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(letter, ax.mid.x, ax.mid.y + 0.5);
+}
+
+function drawCurrentSource(ax: Axis): void {
+  const r = Math.min(ax.len * 0.24, 16);
+  drawLeads(ax, r);
+  ctx.strokeStyle = COLORS.body; ctx.lineWidth = 2.2; ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(ax.mid.x, ax.mid.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // arrow along the axis (pos -> neg is p0 -> p1; current exits pos)
+  const tip = pt(ax.mid, ax, r * 0.6, 0);
+  const tail = pt(ax.mid, ax, -r * 0.6, 0);
+  line(tail, tip);
+  line(tip, pt(tip, ax, -5, -3));
+  line(tip, pt(tip, ax, -5, 3));
+}
+
+function drawAcSource(ax: Axis): void {
+  const r = Math.min(ax.len * 0.24, 16);
+  drawLeads(ax, r);
+  ctx.strokeStyle = COLORS.body; ctx.lineWidth = 2.2; ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(ax.mid.x, ax.mid.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  for (let i = 0; i <= 24; i++) {
+    const along = -r * 0.7 + (i / 24) * r * 1.4;
+    const across = -Math.sin((i / 24) * Math.PI * 2) * r * 0.45;
+    const pp = pt(ax.mid, ax, along, across);
+    if (i === 0) ctx.moveTo(pp.x, pp.y); else ctx.lineTo(pp.x, pp.y);
+  }
+  ctx.stroke();
+}
+
+function drawFuse(ax: Axis, blown: boolean): void {
+  const bodyHalf = Math.min(ax.len * 0.3, 22);
+  drawLeads(ax, bodyHalf);
+  ctx.strokeStyle = blown ? '#b91c1c' : COLORS.body;
+  ctx.lineWidth = 2.2;
+  const h = 8;
+  const x0 = pt(ax.mid, ax, -bodyHalf, 0);
+  const x1 = pt(ax.mid, ax, bodyHalf, 0);
+  ctx.beginPath();
+  ctx.moveTo(pt(x0, ax, 0, -h).x, pt(x0, ax, 0, -h).y);
+  ctx.lineTo(pt(x1, ax, 0, -h).x, pt(x1, ax, 0, -h).y);
+  ctx.lineTo(pt(x1, ax, 0, h).x, pt(x1, ax, 0, h).y);
+  ctx.lineTo(pt(x0, ax, 0, h).x, pt(x0, ax, 0, h).y);
+  ctx.closePath(); ctx.stroke();
+  if (blown) {
+    // broken filament
+    line(x0, pt(ax.mid, ax, -3, 0));
+    line(pt(ax.mid, ax, 3, 0), x1);
+  } else {
+    line(x0, x1);
+  }
+}
+
+function drawPotentiometer(component: Component, ax: Axis): void {
+  drawResistor(ax);
+  // wiper: third pin -> arrow onto the body
+  const wp = pinPosition(component, 'wiper');
+  const wpx = toScreen(wp.x, wp.y);
+  ctx.strokeStyle = COLORS.lead; ctx.lineWidth = 2.2;
+  const target = pt(ax.mid, ax, 0, 0);
+  line(wpx, pt(target, ax, 0, -8));
+  // arrow head at the body
+  ctx.strokeStyle = COLORS.body;
+  const tip = pt(target, ax, 0, -8);
+  line(tip, pt(tip, ax, -4, -5));
+  line(tip, pt(tip, ax, 4, -5));
+}
+
 function drawGround(component: Component): void {
   const w = pinPosition(component, 'gnd');
   const pin = toScreen(w.x, w.y);
@@ -312,7 +423,7 @@ function hexAlpha(hex: string, a: number): string {
 function flowP0toP1(component: Component): number {
   const res = circuit.getState().solution?.results[component.id];
   if (!res) return 0;
-  if (component.type === 'battery') return -res.current; // current exits + externally
+  if (component.type === 'battery' || component.type === 'acsource') return -res.current; // current exits + externally
   return res.current;
 }
 
@@ -435,9 +546,16 @@ function formatOhms(v: number): string {
 function formatValue(c: Component): string | null {
   switch (c.type) {
     case 'battery': return `${round2(c.value)} V`;
+    case 'acsource': return `${round2(c.value)} V~`;
     case 'resistor':
-    case 'lamp': return formatOhms(c.value);
+    case 'lamp':
+    case 'motor':
+    case 'buzzer': return formatOhms(c.value);
+    case 'potentiometer': return `${formatOhms(c.value)} · ${Math.round(c.wiper * 100)}%`;
     case 'capacitor': return `${round2(c.value)} µF`;
+    case 'inductor': return `${round2(c.value)} mH`;
+    case 'currentsource': return `${round2(c.value)} mA`;
+    case 'fuse': return `${round2(c.value)} A`;
     default: return null;
   }
 }
@@ -467,10 +585,54 @@ function drawComponent(c: Component): void {
     case 'switch': drawSwitch(ax, c.closed); break;
     case 'capacitor': drawCapacitor(ax); break;
     case 'diode': drawDiode(ax); break;
+    case 'inductor': drawInductor(ax); break;
+    case 'potentiometer': drawPotentiometer(c, ax); break;
+    case 'currentsource': drawCurrentSource(ax); break;
+    case 'acsource': drawAcSource(ax); break;
+    case 'fuse': drawFuse(ax, c.blown); break;
+    case 'voltmeter': drawCircleGlyph(ax, 'V'); break;
+    case 'ammeter': drawCircleGlyph(ax, 'A'); break;
+    case 'motor': drawCircleGlyph(ax, 'M', res?.lit ? { color: '#0ea5e9', brightness: res.brightness ?? 0 } : undefined); break;
+    case 'buzzer': drawBuzzer(ax, !!res?.lit); break;
     default: break;
   }
-  drawValueLabel(c, ax);
+  if (c.type === 'voltmeter' || c.type === 'ammeter') drawMeterReading(c, ax, res);
+  else drawValueLabel(c, ax);
   drawCurrentDots(c, ax);
+}
+
+function drawBuzzer(ax: Axis, active: boolean): void {
+  drawCircleGlyph(ax, '', active ? { color: '#f59e0b', brightness: 1 } : undefined);
+  // little sound arcs when active
+  const r = Math.min(ax.len * 0.24, 16);
+  ctx.strokeStyle = COLORS.body; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(ax.mid.x, ax.mid.y, r * 0.5, -Math.PI / 3, Math.PI / 3);
+  ctx.stroke();
+  if (active) {
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.6;
+    for (const rr of [r * 1.5, r * 2.1]) {
+      ctx.beginPath();
+      ctx.arc(pt(ax.mid, ax, r, 0).x, pt(ax.mid, ax, r, 0).y, rr - r, -Math.PI / 4, Math.PI / 4);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawMeterReading(c: Component, ax: Axis, res: { meter?: number } | undefined): void {
+  if (!res || res.meter === undefined || !circuit.getState().running) return;
+  const text = c.type === 'voltmeter'
+    ? `${round2(res.meter)} V`
+    : Math.abs(res.meter) >= 1 ? `${round2(res.meter)} A` : `${round2(res.meter * 1000)} mA`;
+  const x = ax.mid.x;
+  const y = ax.mid.y + 24;
+  ctx.font = '700 11px ui-monospace, "SF Mono", Menlo, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + 8;
+  ctx.fillStyle = '#0f766e';
+  roundRect(x - w / 2, y - 8, w, 16, 4); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, x, y);
 }
 
 function drawSelection(): void {
@@ -540,6 +702,7 @@ interface DragState {
   compId?: string;
   startWorld?: Vec2;
   compStart?: Vec2;
+  downClient?: Vec2;
   moved?: boolean;
 }
 let drag: DragState = { kind: 'none' };
@@ -610,6 +773,8 @@ function attachInteraction(): void {
       return;
     }
     if (drag.kind === 'move' && drag.compId) {
+      const dist = Math.hypot(e.offsetX - drag.downClient!.x, e.offsetY - drag.downClient!.y);
+      if (!drag.moved && dist < 4) return; // ignore tiny jitter so a tap stays a tap
       const w = toWorld(e.offsetX, e.offsetY);
       const nx = drag.compStart!.x + (w.x - drag.startWorld!.x);
       const ny = drag.compStart!.y + (w.y - drag.startWorld!.y);
@@ -641,11 +806,11 @@ function attachInteraction(): void {
     if (compId) {
       const c = circuit.componentById(compId)!;
       circuit.setSelected(compId);
-      if (c.type === 'switch') { circuit.toggleSwitch(compId); return; }
       drag = {
         kind: 'move', compId,
         startWorld: toWorld(e.offsetX, e.offsetY),
         compStart: { x: c.x, y: c.y },
+        downClient: { x: e.offsetX, y: e.offsetY },
         moved: false,
       };
       canvas.style.cursor = 'grabbing';
@@ -667,7 +832,10 @@ function attachInteraction(): void {
   const endDrag = (): void => {
     if (drag.kind === 'move' && drag.compId) {
       const c = circuit.componentById(drag.compId);
-      if (c) circuit.moveComponent(drag.compId, Math.round(c.x), Math.round(c.y), true);
+      if (c) {
+        if (drag.moved) circuit.moveComponent(drag.compId, Math.round(c.x), Math.round(c.y), true);
+        else if (c.type === 'switch') circuit.toggleSwitch(drag.compId); // a tap (no drag) toggles
+      }
     }
     drag = { kind: 'none' };
     canvas.style.cursor = 'default';
@@ -705,6 +873,15 @@ function attachInteraction(): void {
     if (e.key === 'Delete' || e.key === 'Backspace') { circuit.removeComponent(state.selectedId); e.preventDefault(); }
     else if (e.key === 'r' || e.key === 'R') { circuit.rotateComponent(state.selectedId); }
   });
+}
+
+// Convert a viewport-client point to a snapped world-grid coordinate, or null
+// if the point is outside the canvas. Used by palette drag-and-drop.
+export function clientToGrid(clientX: number, clientY: number): { x: number; y: number } | null {
+  const rect = canvas.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+  const w = toWorld(clientX - rect.left, clientY - rect.top);
+  return { x: Math.round(w.x), y: Math.round(w.y) };
 }
 
 export { draw };

@@ -107,3 +107,15 @@
   padding: .34rem .7rem; border-radius: 8px; cursor: pointer;
 }
 .sim-reset:hover { border-color: var(--accent); color: var(--ink); }
+
+/* Palette drag-and-drop ghost */
+.drag-ghost {
+  position: fixed; pointer-events: none; z-index: 1000;
+  transform: translate(-50%, -50%);
+  color: var(--muted); opacity: .75;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px 8px; box-shadow: 0 6px 20px rgba(16,24,40,.18);
+}
+.drag-ghost.over-canvas { color: var(--accent); border-color: var(--accent); opacity: .95; }
+.drag-ghost svg { width: 44px; height: 28px; display: block; }
+.part { touch-action: none; }
