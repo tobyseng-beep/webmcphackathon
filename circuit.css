@@ -1,0 +1,101 @@
+/* Circuit-page styles. The shared shell (topbar, panels, activity, badge,
+   inspector, log) comes from styles.css; this only adds the circuit-specific
+   pieces: the parts palette, the selected-component inspector, and the canvas
+   stage. Colours reuse the shared theme tokens. */
+
+.sim-toggle {
+  display: inline-flex; align-items: center; gap: .5rem;
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font: inherit; font-size: .84rem; font-weight: 600;
+  padding: .34rem .8rem; border-radius: 8px; cursor: pointer;
+}
+.sim-toggle .sim-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 rgba(21,128,61,.5);
+  animation: sim-pulse 1.6s infinite;
+}
+.sim-toggle.paused .sim-dot { background: var(--muted); animation: none; box-shadow: none; }
+@keyframes sim-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(21,128,61,.45); }
+  70% { box-shadow: 0 0 0 6px rgba(21,128,61,0); }
+  100% { box-shadow: 0 0 0 0 rgba(21,128,61,0); }
+}
+
+/* ---- parts palette ---- */
+
+.palette {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+  padding: 0 .9rem .4rem;
+}
+.palette-hint {
+  font-size: .74rem; color: var(--muted);
+  padding: 0 .9rem .9rem; margin: 0;
+}
+.part {
+  display: flex; flex-direction: column; align-items: center; gap: .35rem;
+  border: 1px solid var(--line); background: #fff;
+  border-radius: 10px; padding: .55rem .3rem .45rem; cursor: pointer;
+  transition: border-color .12s ease, transform .12s ease, box-shadow .12s ease;
+}
+.part:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(45,112,179,.12); }
+.part svg { width: 46px; height: 30px; }
+.part span { font-size: .76rem; color: var(--ink); font-weight: 600; }
+
+/* ---- selected-component inspector ---- */
+
+.inspector-panel { padding: 0 .9rem 1rem; }
+.insp-title {
+  display: flex; align-items: baseline; gap: .5rem;
+  font-weight: 700; margin: .2rem 0 .7rem;
+}
+.insp-title .insp-type { text-transform: capitalize; }
+.insp-title .insp-id {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .78rem; color: var(--muted);
+}
+.insp-row { margin: .55rem 0; }
+.insp-row label {
+  display: block; font-size: .74rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: .25rem;
+}
+.insp-value {
+  display: flex; align-items: center; gap: .5rem;
+}
+.insp-value input[type="number"] { width: 6.5rem; }
+.insp-value .unit { color: var(--muted); font-size: .85rem; }
+.insp-row input[type="range"] { width: 100%; accent-color: var(--accent); margin-top: .35rem; }
+.insp-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem; }
+.insp-actions button {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font: inherit; font-size: .8rem; padding: .32rem .7rem; border-radius: 7px; cursor: pointer;
+}
+.insp-actions button:hover { border-color: var(--accent); }
+.insp-actions button.danger { color: var(--bad); }
+.insp-actions button.danger:hover { border-color: var(--bad); background: #fef2f2; }
+.insp-reading {
+  margin-top: .8rem; padding: .55rem .65rem;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .78rem;
+  color: var(--ink); line-height: 1.7;
+}
+.insp-reading .lit { color: #b45309; font-weight: 700; }
+.insp-reading .warn { color: var(--bad); }
+
+/* ---- stage ---- */
+
+.stage { position: relative; background: #fbfcfe; min-width: 0; }
+#circuit-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+.warning-bar {
+  position: absolute; left: 50%; bottom: 1.1rem; transform: translateX(-50%);
+  max-width: 40rem; background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d;
+  border-radius: 9px; padding: .55rem .85rem; font-size: .82rem;
+  box-shadow: 0 6px 20px rgba(127,29,29,.12);
+}
+
+@media (max-width: 1100px) {
+  .activity { display: none; }
+}
