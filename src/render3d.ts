@@ -21,6 +21,7 @@ const surfaces = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshLamb
 let axesGroup: THREE.Group | null = null;
 let axesViewportKey = '';
 let ready = false;
+let resizeObserver: ResizeObserver;
 
 export function initRender3D(containerEl: HTMLDivElement, labelEl: HTMLDivElement): void {
   container = containerEl;
@@ -46,6 +47,8 @@ export function initRender3D(containerEl: HTMLDivElement, labelEl: HTMLDivElemen
   buildAxes(getState().viewport);
   attachInteraction();
   resize3D();
+  resizeObserver = new ResizeObserver(resize3D);
+  resizeObserver.observe(container);
   window.addEventListener('resize', resize3D);
   ready = true;
   animate();
@@ -64,26 +67,36 @@ interface WorldTransform {
   x: (value: number) => number;
   y: (value: number) => number;
   z: (value: number) => number;
-  scale: number;
+  scaleX: number;
+  scaleY: number;
+  scaleZ: number;
 }
 
 function worldTransform(view: Viewport): WorldTransform {
-  const maxExtent = Math.max(
+  const xExtent = Math.max(
     Math.abs(view.xmin),
     Math.abs(view.xmax),
+    Number.EPSILON,
+  );
+  const yExtent = Math.max(
     Math.abs(view.ymin),
     Math.abs(view.ymax),
+    Number.EPSILON,
+  );
+  const zExtent = Math.max(
     Math.abs(view.zmin),
     Math.abs(view.zmax),
     Number.EPSILON,
   );
-  const scale = SPAN / maxExtent;
+  const scaleX = SPAN / xExtent;
+  const scaleY = SPAN / yExtent;
+  const scaleZ = SPAN / zExtent;
 
   return {
-    x: (value) => value * scale,
-    y: (value) => value * scale,
-    z: (value) => value * scale,
-    scale,
+    x: (value) => value * scaleX,
+    y: (value) => value * scaleY,
+    z: (value) => value * scaleZ,
+    scaleX, scaleY, scaleZ,
   };
 }
 
@@ -286,10 +299,15 @@ function applyCamera(): void {
   const { theta, phi, distance } = getState().camera;
   const th = (theta * Math.PI) / 180;
   const ph = (phi * Math.PI) / 180;
+  const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
+  const limitingFov = Math.min(verticalFov, horizontalFov);
+  const fitDistance = (Math.sqrt(3) * SPAN * 1.05) / Math.sin(limitingFov / 2);
+  const framedDistance = Math.max(distance, fitDistance);
   camera.position.set(
-    distance * Math.sin(ph) * Math.cos(th),
-    distance * Math.sin(ph) * Math.sin(th),
-    distance * Math.cos(ph)
+    framedDistance * Math.sin(ph) * Math.cos(th),
+    framedDistance * Math.sin(ph) * Math.sin(th),
+    framedDistance * Math.cos(ph)
   );
   camera.up.set(0, 0, 1);
   camera.lookAt(0, 0, 0);
@@ -372,9 +390,9 @@ function attachInteraction(): void {
     const stepY = niceStep(view.ymax - view.ymin, 10);
     const stepZ = niceStep(view.zmax - view.zmin, 10);
     showHover(e.clientX, e.clientY, [
-      { label: 'x', value: point.x / world.scale, majorStep: stepX },
-      { label: 'y', value: point.y / world.scale, majorStep: stepY },
-      { label: 'z', value: point.z / world.scale, majorStep: stepZ },
+      { label: 'x', value: point.x / world.scaleX, majorStep: stepX },
+      { label: 'y', value: point.y / world.scaleY, majorStep: stepY },
+      { label: 'z', value: point.z / world.scaleZ, majorStep: stepZ },
     ]);
   });
   el.addEventListener('pointerleave', () => hideHover());

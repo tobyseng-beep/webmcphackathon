@@ -11,6 +11,7 @@ let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 let dpr = 1;
 let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+let resizeObserver: ResizeObserver;
 
 export function initRender2D(canvasEl: HTMLCanvasElement): void {
   canvas = canvasEl;
@@ -19,6 +20,8 @@ export function initRender2D(canvasEl: HTMLCanvasElement): void {
   ctx = context;
   attachInteraction();
   resize();
+  resizeObserver = new ResizeObserver(resize);
+  resizeObserver.observe(canvas);
   window.addEventListener('resize', resize);
 }
 
