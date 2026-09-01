@@ -206,8 +206,10 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
     }
   }
 
-  const cold = new THREE.Color('#2d70b3');
-  const warm = new THREE.Color('#c74440');
+  // Depth cue: the surface is drawn in the expression's own colour, darkened in
+  // the valleys and brightened toward the peaks -- a shadow gradient, not a
+  // second hue -- so height reads clearly without changing colour.
+  const baseColor = new THREE.Color(expr.color || '#2d70b3');
   const tmp = new THREE.Color();
   const positions: number[] = [];
   const colors: number[] = [];
@@ -254,7 +256,8 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
   const appendVertex = (vertex: SurfaceVertex): void => {
     positions.push(world.x(vertex.x), world.y(vertex.y), world.z(vertex.z));
     const t = Math.min(1, Math.max(0, (vertex.z - view.zmin) / (view.zmax - view.zmin)));
-    tmp.copy(cold).lerp(warm, t);
+    const shade = 0.45 + 0.55 * t; // 0.45 (deep shadow in the valleys) -> 1.0 (full colour at the peaks)
+    tmp.copy(baseColor).multiplyScalar(shade);
     colors.push(tmp.r, tmp.g, tmp.b);
   };
 

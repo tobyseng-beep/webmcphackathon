@@ -66,6 +66,8 @@ export interface BoardState {
   camera: CameraState;
   snapping: boolean;
   snapToCurve: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export type MutationReason =
@@ -75,7 +77,8 @@ export type MutationReason =
   | 'camera'
   | 'mode'
   | 'annotations'
-  | 'settings';
+  | 'settings'
+  | 'history';
 
 export interface SliderSpec {
   min?: number;

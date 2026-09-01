@@ -27,6 +27,24 @@ const snapCurveToggle = mustQuery<HTMLInputElement>('#snap-curve-toggle');
 snapCurveToggle.checked = graph.getState().snapToCurve;
 snapCurveToggle.addEventListener('change', () => graph.setSnapToCurve(snapCurveToggle.checked));
 
+const undoBtn = mustQuery<HTMLButtonElement>('#undo-btn');
+const redoBtn = mustQuery<HTMLButtonElement>('#redo-btn');
+undoBtn.addEventListener('click', () => graph.undo());
+redoBtn.addEventListener('click', () => graph.redo());
+function refreshHistoryButtons(): void {
+  undoBtn.disabled = !graph.getState().canUndo;
+  redoBtn.disabled = !graph.getState().canRedo;
+}
+graph.subscribe(() => refreshHistoryButtons());
+refreshHistoryButtons();
+window.addEventListener('keydown', (e) => {
+  const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) graph.redo(); else graph.undo(); }
+  else if (mod && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); graph.redo(); }
+});
+
 /* ---------- activity log ---------- */
 
 type CallSource = 'you' | 'agent';

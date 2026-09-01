@@ -336,3 +336,41 @@ select { font-size: .86rem; }
   }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* Undo/redo controls */
+.history-controls { display: inline-flex; gap: .35rem; }
+.icon-btn {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font-size: 1rem; line-height: 1; width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.icon-btn:disabled { opacity: .4; cursor: default; }
+
+/* Colour picker popover */
+.color-popover {
+  position: fixed; z-index: 50;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(16,24,40,.18);
+  padding: .6rem; width: 168px;
+}
+.color-swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.color-chip {
+  width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12);
+  cursor: pointer; padding: 0;
+}
+.color-chip.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+.color-custom {
+  display: flex; align-items: center; gap: .45rem;
+  margin-top: .55rem; font-size: .78rem; color: var(--muted); cursor: pointer;
+}
+.color-custom input[type="color"] {
+  width: 26px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px;
+  background: none; cursor: pointer;
+}
+.color-vis {
+  margin-top: .55rem; width: 100%;
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font: inherit; font-size: .8rem; padding: .35rem; border-radius: 7px; cursor: pointer;
+}
+.color-vis:hover { border-color: var(--accent); }

@@ -16,6 +16,7 @@ import type {
   MutationReason,
   NumericScope,
   Result,
+  Slider,
   SliderSpec,
   Viewport,
 } from './types';
@@ -32,6 +33,8 @@ const state: BoardState = {
   camera: { theta: 45, phi: 60, distance: 34 },
   snapping: true,
   snapToCurve: true,
+  canUndo: false,
+  canRedo: false,
 };
 
 type Listener = (reason: MutationReason, state: BoardState) => void;
@@ -45,6 +48,115 @@ const animations = new Map<string, RunningAnimation>();
 
 function notify(reason: MutationReason): void {
   for (const fn of listeners) fn(reason, state);
+}
+
+// ---- undo / redo ----
+// Snapshots capture the editable board: expressions (compiled fn/node kept by
+// reference, since they are immutable for a given latex), sliders and
+// annotations. View settings (viewport, camera, mode, snap) are not history.
+interface HistorySnapshot {
+  expressions: Expression[];
+  sliders: Slider[];
+  annotations: Annotation[];
+}
+const undoStack: HistorySnapshot[] = [];
+const redoStack: HistorySnapshot[] = [];
+const MAX_HISTORY = 100;
+let coalesceKey: string | null = null;
+let coalesceAt = 0;
+let batching = false;
+
+function historySnapshot(): HistorySnapshot {
+  return {
+    expressions: state.expressions.map((e) => ({ ...e })),
+    sliders: state.sliders.map((s) => ({ ...s })),
+    annotations: state.annotations.map((a) => ({ ...a })),
+  };
+}
+
+function refreshHistoryFlags(): void {
+  state.canUndo = undoStack.length > 0;
+  state.canRedo = redoStack.length > 0;
+}
+
+// Call at the START of a recordable mutation, before state changes. A non-null
+// key coalesces a burst of same-key edits (typing, a slider sweep) into one step.
+function pushHistory(key: string | null): void {
+  if (batching) return;
+  const now = performance.now();
+  if (key !== null && key === coalesceKey && now - coalesceAt < 700) {
+    coalesceAt = now;
+    return;
+  }
+  undoStack.push(historySnapshot());
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0;
+  coalesceKey = key;
+  coalesceAt = now;
+  refreshHistoryFlags();
+  notify('history');
+}
+
+export function commitHistory(): void { coalesceKey = null; }
+
+function restoreHistory(snap: HistorySnapshot): void {
+  state.expressions = snap.expressions.map((e) => ({ ...e }));
+  state.sliders = snap.sliders.map((s) => ({ ...s }));
+  state.annotations = snap.annotations.map((a) => ({ ...a }));
+  coalesceKey = null;
+  notify('expressions');
+  notify('sliders');
+  notify('annotations');
+}
+
+export function undo(): Result {
+  if (undoStack.length === 0) return { ok: false, error: 'Nothing to undo.' };
+  redoStack.push(historySnapshot());
+  restoreHistory(undoStack.pop()!);
+  refreshHistoryFlags();
+  notify('history');
+  return { ok: true };
+}
+
+export function redo(): Result {
+  if (redoStack.length === 0) return { ok: false, error: 'Nothing to redo.' };
+  undoStack.push(historySnapshot());
+  restoreHistory(redoStack.pop()!);
+  refreshHistoryFlags();
+  notify('history');
+  return { ok: true };
+}
+
+export function beginBatch(): void {
+  if (!batching) { undoStack.push(historySnapshot()); if (undoStack.length > MAX_HISTORY) undoStack.shift(); redoStack.length = 0; }
+  batching = true;
+  coalesceKey = null;
+}
+export function endBatch(): void {
+  batching = false;
+  coalesceKey = null;
+  refreshHistoryFlags();
+  notify('history');
+}
+
+// Dedicated colour / visibility mutations (kept out of upsert so they do not
+// recompile the expression, and so each is a clean undo step).
+export function setColor(id: string, color: string): Result<{ id: string; color: string }> {
+  const expr = state.expressions.find((e) => e.id === id);
+  if (!expr) return { ok: false, error: `No expression with id "${id}".` };
+  pushHistory(`color:${id}`);
+  expr.color = color;
+  notify('expressions');
+  return { ok: true, id, color };
+}
+
+export function setVisible(id: string, visible: boolean): Result<{ id: string; visible: boolean }> {
+  const expr = state.expressions.find((e) => e.id === id);
+  if (!expr) return { ok: false, error: `No expression with id "${id}".` };
+  pushHistory(null);
+  expr.visible = visible;
+  notify('expressions');
+  return { ok: true, id, visible };
 }
 
 export function subscribe(fn: Listener): () => boolean { listeners.add(fn); return () => listeners.delete(fn); }
@@ -165,6 +277,7 @@ export function upsert(id: string | null, patch: ExpressionPatch = {}): Result<{
   }
 
   const idx = state.expressions.findIndex((e) => e.id === targetId);
+  pushHistory(existing ? `edit:${targetId}` : null);
   if (idx === -1) state.expressions.push(record); else state.expressions[idx] = record;
 
   const newSliders = syncSlidersToExpressions();
@@ -180,6 +293,7 @@ export function upsert(id: string | null, patch: ExpressionPatch = {}): Result<{
 export function remove(id: string): Result<{ removed: { id: string; latex: string } }> {
   const idx = state.expressions.findIndex((e) => e.id === id);
   if (idx === -1) return { ok: false, error: `No expression with id "${id}". Call list_expressions to see current ids.` };
+  pushHistory(null);
   const [gone] = state.expressions.splice(idx, 1);
   syncSlidersToExpressions();
   notify('expressions');
@@ -187,6 +301,7 @@ export function remove(id: string): Result<{ removed: { id: string; latex: strin
 }
 
 export function clearAll(): Result {
+  if (state.expressions.length > 0 || state.annotations.length > 0) pushHistory(null);
   state.expressions = [];
   state.sliders = [];
   state.annotations = [];
@@ -219,6 +334,7 @@ export function defineSlider(name: string, spec: SliderSpec = {}, quiet = false)
   if (slider.min >= slider.max) return { ok: false, error: 'min must be less than max.' };
   slider.value = Math.min(slider.max, Math.max(slider.min, slider.value));
 
+  if (!quiet) pushHistory(`slider-def:${name}`);
   if (existing) Object.assign(existing, slider);
   else state.sliders.push(slider);
 
@@ -232,6 +348,7 @@ export function setSlider(name: string, value: number): Result<{ name: string; v
     return { ok: false, error: `No slider named "${name}". Existing sliders: ${state.sliders.map((s) => s.name).join(', ') || '(none)'}. Use define_slider to create it.` };
   }
   const clamped = Math.min(slider.max, Math.max(slider.min, Number(value)));
+  pushHistory(`slider:${name}`);
   slider.value = clamped;
   notify('sliders');
   return { ok: true, name, value: clamped, clamped: clamped !== Number(value) };
@@ -355,12 +472,14 @@ export function setMode(mode: BoardMode): Result<{ mode: BoardMode }> {
 
 export function annotate({ x, y, z, text }: { x: number; y: number; z?: number; text: string }): Result<{ annotation: Annotation }> {
   const note: Annotation = { id: 'a' + (++idCounter), x: Number(x), y: Number(y), z: z == null ? null : Number(z), text: String(text) };
+  pushHistory(null);
   state.annotations.push(note);
   notify('annotations');
   return { ok: true, annotation: note };
 }
 
 export function clearAnnotations() {
+  if (state.annotations.length > 0) pushHistory(null);
   state.annotations = [];
   notify('annotations');
   return { ok: true };

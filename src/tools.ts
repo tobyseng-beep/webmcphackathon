@@ -276,6 +276,20 @@ const toolDefinitions = [
   },
 
   {
+    name: 'undo',
+    description:
+      'Undo the last change to the graph -- an added or edited expression, a colour change, a slider adjustment, an annotation. Safe to call repeatedly to step further back. Does not change the viewport, camera or mode.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => graph.undo(),
+  },
+  {
+    name: 'redo',
+    description:
+      'Redo the change that was just undone. Returns an error if there is nothing to redo (making a new edit clears the redo history).',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => graph.redo(),
+  },
+  {
     name: 'load_preset',
     description:
       'Load a ready-made lesson set-up: expressions, slider ranges, viewport, camera and a teaching note, all in one call. Faster and less error-prone than building a standard scenario expression by expression. Call with no arguments to list what is available. The returned teaching_note tells you which parameter is worth animating and what the student should notice -- read it before you start explaining.',
@@ -295,19 +309,24 @@ const toolDefinitions = [
       if (!preset) {
         return { ok: false, error: `Unknown preset "${name}". Available: ${Object.keys(PRESETS).join(', ')}.` };
       }
-      graph.clearAll();
-      graph.setMode(preset.mode);
-      graph.setViewport(preset.viewport);
-      if (preset.camera) graph.setCamera(preset.camera);
-      for (const slider of preset.sliders) graph.defineSlider(slider.name, slider);
-      const ids = [];
-      for (const latex of preset.expressions) {
-        const r = graph.upsert(null, { latex });
-        if (r.ok) ids.push(r.id);
+      graph.beginBatch();
+      try {
+        graph.clearAll();
+        graph.setMode(preset.mode);
+        graph.setViewport(preset.viewport);
+        if (preset.camera) graph.setCamera(preset.camera);
+        for (const slider of preset.sliders) graph.defineSlider(slider.name, slider);
+        var ids = [];
+        for (const latex of preset.expressions) {
+          const r = graph.upsert(null, { latex });
+          if (r.ok) ids.push(r.id);
+        }
+        // Slider ranges are reapplied because auto-creation during upsert uses
+        // defaults for any parameter the preset did not declare.
+        for (const slider of preset.sliders) graph.defineSlider(slider.name, slider);
+      } finally {
+        graph.endBatch();
       }
-      // Slider ranges are reapplied because auto-creation during upsert uses
-      // defaults for any parameter the preset did not declare.
-      for (const slider of preset.sliders) graph.defineSlider(slider.name, slider);
       return {
         ok: true, preset: name, title: preset.title,
         teaching_note: preset.teaching_note,
