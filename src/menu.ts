@@ -73,10 +73,10 @@ const CATALOG: Record<string, CatalogEntry> = {
     about: 'Not built yet. For kinematics and oscillation today, open the 2D grapher and load the projectile, damped_oscillator or wave_beats lesson.',
   },
   chemistry: {
-    href: null,
+    href: 'chemistry.html',
     title: 'Chemistry sandbox',
-    ready: false,
-    about: 'Not built yet.',
+    ready: true,
+    about: 'Build atoms from protons, neutrons and electrons on a Bohr diagram, drag elements off a periodic table, and bond them into molecules with covalent and ionic bonds. Supports the full atomic-structure toolset once open.',
   },
 };
 

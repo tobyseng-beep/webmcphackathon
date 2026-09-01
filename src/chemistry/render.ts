@@ -1,0 +1,461 @@
+// Canvas renderer + interaction for the atomic-structure board. Read-only with
+// respect to state: draws whatever the store holds, routes gestures back
+// through the store. Atoms are Bohr diagrams (packed nucleus + electron shells);
+// bonds are lines (covalent) or dashed links (ionic).
+
+import type { Atom, Bond, BondKind } from './types';
+import * as chem from './store';
+import { atomInfo, shells } from './atom';
+import { elementByZ, CATEGORY_COLOR } from './elements';
+
+let canvas: HTMLCanvasElement;
+let ctx: CanvasRenderingContext2D;
+let dpr = 1;
+
+const COLORS = {
+  bg: '#fbfcfe',
+  gridDot: '#e2e8f0',
+  proton: '#ef4444',
+  neutron: '#94a3b8',
+  electron: '#2d70b3',
+  ring: '#cbd5e1',
+  bond: '#334155',
+  ionic: '#b45309',
+  select: '#2d70b3',
+  ink: '#16202e',
+  muted: '#64748b',
+  labelBg: 'rgba(255,255,255,0.92)',
+};
+
+interface Vec2 { x: number; y: number; }
+
+export function initChemRender(canvasEl: HTMLCanvasElement): void {
+  canvas = canvasEl;
+  ctx = canvas.getContext('2d')!;
+  attachInteraction();
+  resize();
+  window.addEventListener('resize', resize);
+  requestAnimationFrame(frame);
+}
+
+export function resize(): void {
+  if (!canvas) return;
+  dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  centerIfFresh(rect.width, rect.height);
+}
+let didCenter = false;
+function centerIfFresh(w: number, h: number): void {
+  if (didCenter) return;
+  didCenter = true;
+  const { scale } = chem.getState().view;
+  chem.setView({ originX: -(w / scale) / 2, originY: -(h / scale) / 2 });
+}
+function dims(): { W: number; H: number } { return { W: canvas.width / dpr, H: canvas.height / dpr }; }
+
+function toScreen(x: number, y: number): Vec2 {
+  const { originX, originY, scale } = chem.getState().view;
+  return { x: (x - originX) * scale, y: (y - originY) * scale };
+}
+function toWorld(px: number, py: number): Vec2 {
+  const { originX, originY, scale } = chem.getState().view;
+  return { x: originX + px / scale, y: originY + py / scale };
+}
+
+// ---- geometry ----
+
+const NUCLEUS_DOT = 0.13; // world units, nucleon dot radius
+const SHELL_GAP = 0.42; // spacing between shells (world units)
+const ELECTRON_DOT = 0.1;
+
+function nucleusRadius(atom: Atom): number {
+  const n = Math.max(1, atom.protons + atom.neutrons);
+  return NUCLEUS_DOT * (1.6 + 1.25 * Math.sqrt(n));
+}
+function atomRadius(atom: Atom): number {
+  const nShells = shells(atom.electrons).length;
+  return nucleusRadius(atom) + 0.35 + Math.max(0, nShells) * SHELL_GAP;
+}
+
+// ---- grid ----
+
+function drawGrid(): void {
+  const { W, H } = dims();
+  const { originX, originY, scale } = chem.getState().view;
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = COLORS.gridDot;
+  const x0 = Math.floor(originX), x1 = Math.ceil(originX + W / scale);
+  const y0 = Math.floor(originY), y1 = Math.ceil(originY + H / scale);
+  for (let x = x0; x <= x1; x++) {
+    for (let y = y0; y <= y1; y++) {
+      const s = toScreen(x, y);
+      ctx.beginPath(); ctx.arc(s.x, s.y, 1.1, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+// ---- atom ----
+
+function drawNucleus(atom: Atom, center: Vec2, scale: number): void {
+  const total = atom.protons + atom.neutrons;
+  const spacing = NUCLEUS_DOT * 2.05 * scale;
+  const dot = Math.max(1.5, NUCLEUS_DOT * scale);
+  const golden = 2.399963;
+  let protonRun = 0;
+  for (let i = 0; i < total; i++) {
+    // even interleave of protons among all nucleons
+    protonRun += atom.protons;
+    const isProton = protonRun >= total ? (protonRun -= total, true) : false;
+    const r = spacing * 0.42 * Math.sqrt(i);
+    const ang = i * golden;
+    const px = center.x + Math.cos(ang) * r;
+    const py = center.y + Math.sin(ang) * r;
+    ctx.beginPath();
+    ctx.arc(px, py, dot, 0, Math.PI * 2);
+    ctx.fillStyle = isProton ? COLORS.proton : COLORS.neutron;
+    ctx.fill();
+  }
+}
+
+function drawAtom(atom: Atom, selected: boolean): void {
+  const { scale } = chem.getState().view;
+  const center = toScreen(atom.x, atom.y);
+  const nR = nucleusRadius(atom) * scale;
+  const shellCounts = shells(atom.electrons);
+
+  // shell rings + electrons
+  ctx.strokeStyle = COLORS.ring;
+  ctx.lineWidth = 1;
+  shellCounts.forEach((count, i) => {
+    const ringR = (nucleusRadius(atom) + 0.35 + (i + 1) * SHELL_GAP) * scale;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    const start = (i * 0.6) + Math.PI / 2;
+    for (let j = 0; j < count; j++) {
+      const ang = start + (j / count) * Math.PI * 2;
+      const ex = center.x + Math.cos(ang) * ringR;
+      const ey = center.y + Math.sin(ang) * ringR;
+      ctx.beginPath();
+      ctx.arc(ex, ey, Math.max(2, ELECTRON_DOT * scale), 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.electron;
+      ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.stroke();
+    }
+  });
+
+  // nucleus
+  drawNucleus(atom, center, scale);
+
+  // selection halo
+  if (selected) {
+    ctx.strokeStyle = COLORS.select;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, atomRadius(atom) * scale + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  void nR;
+  drawAtomLabel(atom, center, scale);
+}
+
+function drawAtomLabel(atom: Atom, center: Vec2, scale: number): void {
+  const info = atomInfo(atom);
+  const y = center.y + atomRadius(atom) * scale + 14;
+  const symbol = info.symbol;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // symbol + charge
+  ctx.font = '700 16px ui-sans-serif, system-ui, sans-serif';
+  const symW = ctx.measureText(symbol).width;
+  ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+  const chW = info.chargeLabel ? ctx.measureText(info.chargeLabel).width + 2 : 0;
+  const line2 = `${atom.protons}p · ${atom.neutrons}n · ${atom.electrons}e`;
+  ctx.font = '11px ui-monospace, "SF Mono", Menlo, monospace';
+  const l2W = ctx.measureText(line2).width;
+
+  const boxW = Math.max(symW + chW, l2W) + 16;
+  const boxH = 34;
+  ctx.fillStyle = COLORS.labelBg;
+  roundRect(center.x - boxW / 2, y - 10, boxW, boxH, 6); ctx.fill();
+
+  ctx.fillStyle = info.charge === 0 ? COLORS.ink : info.charge > 0 ? COLORS.proton : COLORS.electron;
+  ctx.textAlign = 'left';
+  ctx.font = '700 16px ui-sans-serif, system-ui, sans-serif';
+  const sx = center.x - (symW + chW) / 2;
+  ctx.fillText(symbol, sx, y - 1);
+  if (info.chargeLabel) {
+    ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText(info.chargeLabel, sx + symW + 2, y - 6);
+  }
+  ctx.textAlign = 'center';
+  ctx.font = '11px ui-monospace, "SF Mono", Menlo, monospace';
+  ctx.fillStyle = COLORS.muted;
+  ctx.fillText(line2, center.x, y + 13);
+}
+
+function roundRect(x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ---- bonds ----
+
+function drawBond(bond: Bond, selected: boolean): void {
+  const a = chem.atomById(bond.a), b = chem.atomById(bond.b);
+  if (!a || !b) return;
+  const { scale } = chem.getState().view;
+  const ca = toScreen(a.x, a.y), cb = toScreen(b.x, b.y);
+  const dx = cb.x - ca.x, dy = cb.y - ca.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const ra = atomRadius(a) * scale, rb = atomRadius(b) * scale;
+  const start = { x: ca.x + ux * ra, y: ca.y + uy * ra };
+  const end = { x: cb.x - ux * rb, y: cb.y - uy * rb };
+  const perp = { x: -uy, y: ux };
+
+  ctx.lineCap = 'round';
+  if (bond.kind === 'ionic') {
+    ctx.strokeStyle = selected ? COLORS.select : COLORS.ionic;
+    ctx.lineWidth = selected ? 3 : 2.2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+    ctx.setLineDash([]);
+    // little + / - near each end
+    ctx.font = '700 13px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = COLORS.ionic;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('+', start.x + ux * 12, start.y + uy * 12);
+    ctx.fillText('−', end.x - ux * 12, end.y - uy * 12);
+  } else {
+    ctx.strokeStyle = selected ? COLORS.select : COLORS.bond;
+    ctx.lineWidth = selected ? 3 : 2.4;
+    const gap = 4;
+    const n = bond.order;
+    for (let i = 0; i < n; i++) {
+      const off = (i - (n - 1) / 2) * gap;
+      ctx.beginPath();
+      ctx.moveTo(start.x + perp.x * off, start.y + perp.y * off);
+      ctx.lineTo(end.x + perp.x * off, end.y + perp.y * off);
+      ctx.stroke();
+    }
+  }
+}
+
+// ---- interaction state ----
+
+let bondMode = false;
+let bondFrom: string | null = null;
+let hoverAtom: string | null = null;
+let pointer: Vec2 = { x: 0, y: 0 };
+
+export function setBondMode(on: boolean): void {
+  bondMode = on;
+  bondFrom = null;
+  chem.setMessage(on ? 'Bond mode: click one atom, then another to bond them.' : null);
+  canvas.style.cursor = on ? 'crosshair' : 'default';
+}
+export function isBondMode(): boolean { return bondMode; }
+
+/** Metal + non-metal defaults to ionic, otherwise covalent. */
+export function suggestBondKind(aId: string, bId: string): BondKind {
+  const a = chem.atomById(aId), b = chem.atomById(bId);
+  const catA = a ? elementByZ(a.protons)?.category : undefined;
+  const catB = b ? elementByZ(b.protons)?.category : undefined;
+  const metal = (c?: string) => c === 'alkali' || c === 'alkaline' || c === 'transition' || c === 'post-transition';
+  const nonmetal = (c?: string) => c === 'nonmetal' || c === 'halogen';
+  if ((metal(catA) && nonmetal(catB)) || (metal(catB) && nonmetal(catA))) return 'ionic';
+  return 'covalent';
+}
+
+// ---- draw loop ----
+
+function draw(): void {
+  if (!ctx) return;
+  const { W, H } = dims();
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+
+  const state = chem.getState();
+  for (const bond of state.bonds) drawBond(bond, bond.id === state.selectedBondId);
+  for (const atom of state.atoms) drawAtom(atom, atom.id === state.selectedId);
+
+  // bond rubber-band
+  if (bondMode && bondFrom) {
+    const from = chem.atomById(bondFrom);
+    if (from) {
+      const c = toScreen(from.x, from.y);
+      ctx.strokeStyle = COLORS.select; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(pointer.x, pointer.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  ctx.restore();
+}
+
+function frame(): void { draw(); requestAnimationFrame(frame); }
+
+// ---- hit testing ----
+
+function atomAt(px: number, py: number): string | null {
+  const state = chem.getState();
+  const { scale } = state.view;
+  for (let i = state.atoms.length - 1; i >= 0; i--) {
+    const a = state.atoms[i];
+    const c = toScreen(a.x, a.y);
+    if (Math.hypot(c.x - px, c.y - py) <= atomRadius(a) * scale + 4) return a.id;
+  }
+  return null;
+}
+function bondAt(px: number, py: number): string | null {
+  const state = chem.getState();
+  let best: string | null = null; let bestD = 7;
+  for (const bond of state.bonds) {
+    const a = chem.atomById(bond.a), b = chem.atomById(bond.b);
+    if (!a || !b) continue;
+    const ca = toScreen(a.x, a.y), cb = toScreen(b.x, b.y);
+    const d = distToSegment({ x: px, y: py }, ca, cb);
+    if (d < bestD) { bestD = d; best = bond.id; }
+  }
+  return best;
+}
+function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// ---- pointer interaction ----
+
+interface Drag { kind: 'pan' | 'move' | 'none'; atomId?: string; startWorld?: Vec2; atomStart?: Vec2; downClient?: Vec2; moved?: boolean; }
+let drag: Drag = { kind: 'none' };
+
+function attachInteraction(): void {
+  canvas.addEventListener('pointermove', (e) => {
+    pointer = { x: e.offsetX, y: e.offsetY };
+    if (drag.kind === 'pan') {
+      const w = toWorld(e.offsetX, e.offsetY);
+      chem.setView({
+        originX: chem.getState().view.originX - (w.x - drag.startWorld!.x),
+        originY: chem.getState().view.originY - (w.y - drag.startWorld!.y),
+      });
+      return;
+    }
+    if (drag.kind === 'move' && drag.atomId) {
+      const dist = Math.hypot(e.offsetX - drag.downClient!.x, e.offsetY - drag.downClient!.y);
+      if (!drag.moved && dist < 4) return;
+      const w = toWorld(e.offsetX, e.offsetY);
+      drag.moved = true;
+      chem.moveAtom(drag.atomId, drag.atomStart!.x + (w.x - drag.startWorld!.x), drag.atomStart!.y + (w.y - drag.startWorld!.y), false);
+      return;
+    }
+    if (!bondMode) hoverAtom = atomAt(e.offsetX, e.offsetY);
+    canvas.style.cursor = bondMode ? 'crosshair' : hoverAtom ? 'grab' : bondAt(e.offsetX, e.offsetY) ? 'pointer' : 'default';
+  });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointer = { x: e.offsetX, y: e.offsetY };
+    const atom = atomAt(e.offsetX, e.offsetY);
+
+    if (bondMode) {
+      if (atom) {
+        if (!bondFrom) { bondFrom = atom; chem.setSelected(atom); }
+        else if (bondFrom !== atom) {
+          const kind = suggestBondKind(bondFrom, atom);
+          chem.addBond(bondFrom, atom, kind, kind === 'covalent' ? 1 : 1);
+          bondFrom = null;
+        } else { bondFrom = null; }
+      } else { bondFrom = null; }
+      return;
+    }
+
+    if (atom) {
+      const a = chem.atomById(atom)!;
+      chem.setSelected(atom);
+      drag = { kind: 'move', atomId: atom, startWorld: toWorld(e.offsetX, e.offsetY), atomStart: { x: a.x, y: a.y }, downClient: { x: e.offsetX, y: e.offsetY }, moved: false };
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+    const bond = bondAt(e.offsetX, e.offsetY);
+    if (bond) { chem.setSelectedBond(bond); return; }
+
+    chem.setSelected(null); chem.setSelectedBond(null);
+    drag = { kind: 'pan', startWorld: toWorld(e.offsetX, e.offsetY) };
+    canvas.style.cursor = 'grabbing';
+  });
+
+  const end = (): void => {
+    if (drag.kind === 'move' && drag.atomId && drag.moved) {
+      const a = chem.atomById(drag.atomId);
+      if (a) chem.moveAtom(drag.atomId, Math.round(a.x), Math.round(a.y), true);
+      chem.commitHistory();
+    }
+    drag = { kind: 'none' };
+    canvas.style.cursor = 'default';
+  };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const before = toWorld(e.offsetX, e.offsetY);
+    const scale = Math.max(24, Math.min(160, chem.getState().view.scale * Math.exp(-e.deltaY * 0.0015)));
+    chem.setView({ scale });
+    const after = toWorld(e.offsetX, e.offsetY);
+    chem.setView({ originX: chem.getState().view.originX + (before.x - after.x), originY: chem.getState().view.originY + (before.y - after.y) });
+  }, { passive: false });
+
+  window.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.key === 'Escape') { if (bondMode) setBondMode(false); chem.setSelected(null); chem.setSelectedBond(null); return; }
+    const st = chem.getState();
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (st.selectedBondId) { chem.removeBond(st.selectedBondId); e.preventDefault(); }
+      else if (st.selectedId) { chem.removeAtom(st.selectedId); e.preventDefault(); }
+    }
+  });
+}
+
+/** Frame all atoms in the viewport with a little padding. */
+export function fitView(): void {
+  const atoms = chem.getState().atoms;
+  if (atoms.length === 0 || !canvas) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const a of atoms) {
+    const r = atomRadius(a) + 0.6;
+    minX = Math.min(minX, a.x - r); maxX = Math.max(maxX, a.x + r);
+    minY = Math.min(minY, a.y - r); maxY = Math.max(maxY, a.y + r + 0.9); // label sits below
+  }
+  const { W, H } = dims();
+  const worldW = Math.max(1, maxX - minX), worldH = Math.max(1, maxY - minY);
+  const scale = Math.max(24, Math.min(90, Math.min(W / worldW, H / worldH) * 0.92));
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  chem.setView({ scale, originX: cx - (W / scale) / 2, originY: cy - (H / scale) / 2 });
+}
+
+/** Place an atom of element Z at a viewport-client point (for palette drops). */
+export function clientToGrid(clientX: number, clientY: number): { x: number; y: number } | null {
+  const rect = canvas.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+  const w = toWorld(clientX - rect.left, clientY - rect.top);
+  return { x: Math.round(w.x), y: Math.round(w.y) };
+}

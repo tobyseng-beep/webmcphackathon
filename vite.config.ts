@@ -8,6 +8,7 @@ export default defineConfig({
         main: 'index.html',
         graph: 'graph.html',
         circuit: 'circuit.html',
+        chemistry: 'chemistry.html',
         probe: 'probe.html',
       },
     },
