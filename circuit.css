@@ -119,3 +119,52 @@
 .drag-ghost.over-canvas { color: var(--accent); border-color: var(--accent); opacity: .95; }
 .drag-ghost svg { width: 44px; height: 28px; display: block; }
 .part { touch-action: none; }
+
+/* Undo/redo + control separators */
+.control-sep { width: 1px; height: 20px; background: var(--line); display: inline-block; }
+.icon-btn {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font-size: 1rem; line-height: 1; width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.icon-btn:disabled { opacity: .4; cursor: default; }
+
+/* Inspector scope-probe buttons */
+.insp-actions button.probe { color: var(--accent); }
+.insp-actions button.probe:hover { border-color: var(--accent); background: #eff6ff; }
+
+/* Oscilloscope panel */
+.scope-panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 232px;
+  background: #0f172a;
+  border-top: 1px solid #1e293b;
+  display: flex; flex-direction: column;
+  box-shadow: 0 -8px 24px rgba(15,23,42,.18);
+  z-index: 6;
+}
+.scope-head {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .4rem .7rem; border-bottom: 1px solid #1e293b;
+}
+.scope-title { color: #e2e8f0; font-size: .8rem; font-weight: 700; letter-spacing: .03em; }
+.scope-legend { display: flex; flex-wrap: wrap; gap: .4rem; flex: 1; overflow: hidden; }
+.scope-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: #1e293b; color: #e2e8f0; border-radius: 999px;
+  padding: .12rem .5rem; font-size: .72rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.scope-chip .swatch { width: 9px; height: 9px; border-radius: 50%; }
+.scope-chip button {
+  border: 0; background: none; color: #94a3b8; cursor: pointer;
+  font-size: .8rem; line-height: 1; padding: 0;
+}
+.scope-chip button:hover { color: #f87171; }
+.scope-mini {
+  border: 1px solid #334155; background: #1e293b; color: #cbd5e1;
+  font: inherit; font-size: .72rem; padding: .2rem .55rem; border-radius: 6px; cursor: pointer;
+}
+.scope-mini:hover { border-color: #475569; color: #fff; }
+.scope-canvas { flex: 1; width: 100%; display: block; min-height: 0; }

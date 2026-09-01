@@ -837,6 +837,7 @@ function attachInteraction(): void {
         else if (c.type === 'switch') circuit.toggleSwitch(drag.compId); // a tap (no drag) toggles
       }
     }
+    if (drag.moved) circuit.commitHistory(); // close the drag's undo group
     drag = { kind: 'none' };
     canvas.style.cursor = 'default';
   };

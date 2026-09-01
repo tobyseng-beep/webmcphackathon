@@ -27,6 +27,9 @@ const state: CircuitState = {
   running: true,
   view: { originX: -8, originY: -6, scale: 46 },
   solution: null,
+  scope: { visible: false, traces: [], windowSeconds: 10 },
+  canUndo: false,
+  canRedo: false,
   message: null,
 };
 
@@ -35,6 +38,98 @@ const state: CircuitState = {
 let capVoltage: Record<string, number> = {};
 let indCurrent: Record<string, number> = {};
 let simTime = 0;
+
+// ---- undo / redo ----
+// Snapshots capture only the circuit itself (components + wires); selection,
+// view and transient state are not part of history.
+interface Snapshot { components: Component[]; wires: Wire[]; }
+const undoStack: Snapshot[] = [];
+const redoStack: Snapshot[] = [];
+const MAX_HISTORY = 100;
+let coalesceKey: string | null = null;
+let coalesceAt = 0;
+let batching = false;
+
+function snapshot(): Snapshot {
+  return {
+    components: state.components.map((c) => ({ ...c })),
+    wires: state.wires.map((w) => ({ ...w })),
+  };
+}
+
+function refreshHistoryFlags(): void {
+  state.canUndo = undoStack.length > 0;
+  state.canRedo = redoStack.length > 0;
+}
+
+// Called at the START of every recordable mutation, before state changes.
+// A non-null `key` coalesces a burst of same-key edits (a drag, a slider
+// sweep) into a single undo step.
+function record(key: string | null): void {
+  if (batching) return;
+  const now = performance.now();
+  if (key !== null && key === coalesceKey && now - coalesceAt < 700) {
+    coalesceAt = now;
+    return;
+  }
+  undoStack.push(snapshot());
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0;
+  coalesceKey = key;
+  coalesceAt = now;
+  refreshHistoryFlags();
+  notify('history');
+}
+
+// End a coalescing burst (e.g. on pointer-up) so the next same-key edit starts
+// a fresh undo step.
+export function commitHistory(): void { coalesceKey = null; }
+
+function restoreSnapshot(snap: Snapshot): void {
+  state.components = snap.components.map((c) => ({ ...c }));
+  state.wires = snap.wires.map((w) => ({ ...w }));
+  state.selectedId = null;
+  state.selectedWireId = null;
+  capVoltage = {};
+  indCurrent = {};
+  simTime = 0;
+  // Drop scope traces whose component no longer exists.
+  state.scope.traces = state.scope.traces.filter((tr) => state.components.some((c) => c.id === tr.componentId));
+  coalesceKey = null;
+  notify('components');
+  resolve();
+}
+
+export function undo(): { ok: boolean } {
+  if (undoStack.length === 0) return { ok: false };
+  redoStack.push(snapshot());
+  restoreSnapshot(undoStack.pop()!);
+  refreshHistoryFlags();
+  notify('history');
+  return { ok: true };
+}
+
+export function redo(): { ok: boolean } {
+  if (redoStack.length === 0) return { ok: false };
+  undoStack.push(snapshot());
+  restoreSnapshot(redoStack.pop()!);
+  refreshHistoryFlags();
+  notify('history');
+  return { ok: true };
+}
+
+// Group a composite operation (e.g. loading a preset) into one undo step.
+export function beginBatch(): void {
+  if (!batching) { undoStack.push(snapshot()); if (undoStack.length > MAX_HISTORY) undoStack.shift(); redoStack.length = 0; }
+  batching = true;
+  coalesceKey = null;
+}
+export function endBatch(): void {
+  batching = false;
+  coalesceKey = null;
+  refreshHistoryFlags();
+  notify('history');
+}
 
 type Listener = (reason: ChangeReason, state: CircuitState) => void;
 const listeners = new Set<Listener>();
@@ -90,10 +185,74 @@ function step(dt: number): Solution {
     if (anyBlew) solution = solve(state.components, state.wires, { dt, capVoltage, indCurrent, time: simTime });
     capVoltage = { ...capVoltage, ...solution.capVoltage };
     indCurrent = { ...indCurrent, ...solution.indCurrent };
+    if (dt > 0) sampleScope(solution);
   }
   state.solution = solution;
   notify('solution');
   return solution;
+}
+
+// ---- oscilloscope ----
+
+const SCOPE_COLORS = ['#2d70b3', '#c74440', '#388c46', '#6042a6', '#e0a500', '#0ea5e9'];
+
+function sampleScope(solution: Solution): void {
+  const scope = state.scope;
+  if (scope.traces.length === 0) return;
+  for (const tr of scope.traces) {
+    const res = solution.results[tr.componentId];
+    if (!res) continue;
+    const v = tr.quantity === 'voltage' ? res.voltage : res.current * 1000; // current in mA
+    tr.samples.push({ t: simTime, v });
+    const cutoff = simTime - scope.windowSeconds;
+    if (tr.samples.length > 4 && tr.samples[0].t < cutoff) {
+      // trim points that have scrolled off the left edge
+      let i = 0;
+      while (i < tr.samples.length - 2 && tr.samples[i + 1].t < cutoff) i++;
+      if (i > 0) tr.samples.splice(0, i);
+    }
+    if (tr.samples.length > 4000) tr.samples.splice(0, tr.samples.length - 4000);
+  }
+}
+
+export function addProbe(componentId: string, quantity: 'voltage' | 'current'): { ok: boolean; error?: string; traceId?: string } {
+  const c = componentById(componentId);
+  if (!c) return { ok: false, error: `No component with id "${componentId}".` };
+  if (c.type === 'ground') return { ok: false, error: 'Ground carries no signal to probe.' };
+  const traceId = `${componentId}:${quantity}`;
+  if (state.scope.traces.some((tr) => tr.id === traceId)) {
+    return { ok: false, error: `${componentId} ${quantity} is already on the scope.` };
+  }
+  const color = SCOPE_COLORS[state.scope.traces.length % SCOPE_COLORS.length];
+  const unit = quantity === 'voltage' ? 'V' : 'mA';
+  state.scope.traces.push({
+    id: traceId, componentId, quantity,
+    label: `${componentId} ${quantity === 'voltage' ? 'V' : 'I'} (${unit})`,
+    color, samples: [],
+  });
+  state.scope.visible = true;
+  notify('scope');
+  return { ok: true, traceId };
+}
+
+export function removeProbe(traceId: string): { ok: boolean; error?: string } {
+  const before = state.scope.traces.length;
+  state.scope.traces = state.scope.traces.filter((tr) => tr.id !== traceId);
+  if (state.scope.traces.length === before) return { ok: false, error: `No scope trace "${traceId}".` };
+  notify('scope');
+  return { ok: true };
+}
+
+export function clearScope(): { ok: true } {
+  state.scope.traces = [];
+  notify('scope');
+  return { ok: true };
+}
+
+export function showScope(visible: boolean): { ok: true; visible: boolean } {
+  state.scope.visible = visible;
+  notify('scope');
+  return { ok: true, visible };
 }
 
 export function resolve(): Solution {
@@ -102,7 +261,9 @@ export function resolve(): Solution {
 
 // Called by the render loop to move time forward while a reactive part is present.
 export function advance(dt: number): void {
-  if (!state.running || !needsTransient()) return;
+  if (!state.running) return;
+  const scopeActive = state.scope.visible && state.scope.traces.length > 0;
+  if (!needsTransient() && !scopeActive) return;
   const clamped = Math.min(0.05, Math.max(0, dt));
   simTime += clamped;
   step(clamped);
@@ -114,7 +275,9 @@ export function resetSimulation(): { ok: true } {
   indCurrent = {};
   simTime = 0;
   for (const c of state.components) if (c.type === 'fuse') c.blown = false;
+  for (const tr of state.scope.traces) tr.samples = [];
   resolve();
+  notify('scope');
   return { ok: true };
 }
 
@@ -156,6 +319,7 @@ export function addComponent(type: ComponentType, opts: AddOptions = {}): { ok: 
     blown: false,
     label: opts.label ?? null,
   };
+  record(null);
   if (type === 'capacitor') capVoltage[id] = 0;
   if (type === 'inductor') indCurrent[id] = 0;
   state.components.push(component);
@@ -175,7 +339,9 @@ function clampValue(type: ComponentType, value: number): number {
 export function removeComponent(id: string): { ok: boolean; error?: string } {
   const idx = state.components.findIndex((c) => c.id === id);
   if (idx === -1) return { ok: false, error: `No component with id "${id}".` };
+  record(null);
   state.components.splice(idx, 1);
+  state.scope.traces = state.scope.traces.filter((tr) => tr.componentId !== id);
   delete capVoltage[id];
   delete indCurrent[id];
   // Drop any wires that referenced this component's pins.
@@ -189,6 +355,7 @@ export function removeComponent(id: string): { ok: boolean; error?: string } {
 export function moveComponent(id: string, x: number, y: number, snap = true): { ok: boolean; error?: string } {
   const c = componentById(id);
   if (!c) return { ok: false, error: `No component with id "${id}".` };
+  record(`move:${id}`);
   c.x = snap ? Math.round(x) : x;
   c.y = snap ? Math.round(y) : y;
   notify('components');
@@ -199,6 +366,7 @@ export function moveComponent(id: string, x: number, y: number, snap = true): { 
 export function rotateComponent(id: string, rotation?: Rotation): { ok: boolean; error?: string; rotation?: Rotation } {
   const c = componentById(id);
   if (!c) return { ok: false, error: `No component with id "${id}".` };
+  record(null);
   if (rotation !== undefined) c.rotation = (((rotation % 360) + 360) % 360) as Rotation;
   else c.rotation = ((c.rotation + 90) % 360) as Rotation;
   notify('components');
@@ -212,6 +380,7 @@ export function setValue(id: string, value: number): { ok: boolean; error?: stri
   if (CATALOG[c.type].unit === '') {
     return { ok: false, error: `${c.type} "${id}" has no numeric value to set.` };
   }
+  record(`value:${id}`);
   c.value = clampValue(c.type, value);
   notify('components');
   resolve();
@@ -222,6 +391,7 @@ export function setColor(id: string, color: LedColor): { ok: boolean; error?: st
   const c = componentById(id);
   if (!c || c.type !== 'led') return { ok: false, error: `No LED with id "${id}".` };
   if (!LED_COLORS.includes(color)) return { ok: false, error: `Unknown LED colour "${color}".` };
+  record(null);
   c.color = color;
   notify('components');
   resolve();
@@ -231,6 +401,7 @@ export function setColor(id: string, color: LedColor): { ok: boolean; error?: st
 export function setWiper(id: string, wiper: number): { ok: boolean; error?: string; wiper?: number } {
   const c = componentById(id);
   if (!c || c.type !== 'potentiometer') return { ok: false, error: `No potentiometer with id "${id}".` };
+  record(`wiper:${id}`);
   c.wiper = Math.min(1, Math.max(0, wiper));
   notify('components');
   resolve();
@@ -240,6 +411,7 @@ export function setWiper(id: string, wiper: number): { ok: boolean; error?: stri
 export function setFrequency(id: string, freq: number): { ok: boolean; error?: string; freq?: number } {
   const c = componentById(id);
   if (!c || c.type !== 'acsource') return { ok: false, error: `No AC source with id "${id}".` };
+  record(`freq:${id}`);
   c.freq = Math.min(1000, Math.max(0.01, freq));
   notify('components');
   resolve();
@@ -249,6 +421,7 @@ export function setFrequency(id: string, freq: number): { ok: boolean; error?: s
 export function toggleSwitch(id: string, closed?: boolean): { ok: boolean; error?: string; closed?: boolean } {
   const c = componentById(id);
   if (!c || c.type !== 'switch') return { ok: false, error: `No switch with id "${id}".` };
+  record(null);
   c.closed = closed ?? !c.closed;
   notify('components');
   resolve();
@@ -274,6 +447,7 @@ export function connect(from: string, to: string): { ok: boolean; error?: string
     (w) => (w.from === from && w.to === to) || (w.from === to && w.to === from),
   );
   if (exists) return { ok: false, error: `${from} and ${to} are already connected.` };
+  record(null);
   const id = `w${++wireCounter}`;
   state.wires.push({ id, from, to });
   notify('wires');
@@ -282,20 +456,22 @@ export function connect(from: string, to: string): { ok: boolean; error?: string
 }
 
 export function disconnect(a: string, b: string): { ok: boolean; error?: string } {
-  const before = state.wires.length;
-  state.wires = state.wires.filter(
+  const kept = state.wires.filter(
     (w) => !((w.from === a && w.to === b) || (w.from === b && w.to === a)),
   );
-  if (state.wires.length === before) return { ok: false, error: `No wire between ${a} and ${b}.` };
+  if (kept.length === state.wires.length) return { ok: false, error: `No wire between ${a} and ${b}.` };
+  record(null);
+  state.wires = kept;
   notify('wires');
   resolve();
   return { ok: true };
 }
 
 export function removeWire(wireId: string): { ok: boolean; error?: string } {
-  const before = state.wires.length;
-  state.wires = state.wires.filter((w) => w.id !== wireId);
-  if (state.wires.length === before) return { ok: false, error: `No wire "${wireId}".` };
+  const kept = state.wires.filter((w) => w.id !== wireId);
+  if (kept.length === state.wires.length) return { ok: false, error: `No wire "${wireId}".` };
+  record(null);
+  state.wires = kept;
   if (state.selectedWireId === wireId) state.selectedWireId = null;
   notify('wires');
   resolve();
@@ -303,8 +479,10 @@ export function removeWire(wireId: string): { ok: boolean; error?: string } {
 }
 
 export function clearAll(): { ok: true } {
+  if (state.components.length > 0 || state.wires.length > 0) record(null);
   state.components = [];
   state.wires = [];
+  state.scope.traces = [];
   state.selectedId = null;
   state.selectedWireId = null;
   capVoltage = {};
@@ -318,6 +496,7 @@ export function clearAll(): { ok: true } {
 }
 
 export function clearWires(): { ok: true } {
+  if (state.wires.length > 0) record(null);
   state.wires = [];
   notify('wires');
   resolve();

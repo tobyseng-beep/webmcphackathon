@@ -8,6 +8,7 @@ import { TOOLS, registerTools } from './tools';
 import { PRESETS } from './presets';
 import { CATALOG, COMPONENT_ORDER, LED_SPEC } from './components';
 import { initCircuitRender, clientToGrid } from './render';
+import { initScope, resizeScope } from './scope';
 import { mustQuery } from '../dom';
 import type { Component, ComponentType, LedColor } from './types';
 
@@ -19,6 +20,11 @@ const paletteEl = mustQuery<HTMLDivElement>('#palette');
 const inspectorPanel = mustQuery<HTMLDivElement>('#inspector-panel');
 const emptyHint = mustQuery<HTMLDivElement>('#empty-hint');
 const warningBar = mustQuery<HTMLDivElement>('#warning-bar');
+const scopePanel = mustQuery<HTMLDivElement>('#scope-panel');
+const scopeCanvas = mustQuery<HTMLCanvasElement>('#scope-canvas');
+const scopeLegend = mustQuery<HTMLDivElement>('#scope-legend');
+const undoBtn = mustQuery<HTMLButtonElement>('#undo-btn');
+const redoBtn = mustQuery<HTMLButtonElement>('#redo-btn');
 
 /* ---------- activity log (identical pattern to the grapher) ---------- */
 
@@ -80,6 +86,7 @@ mustQuery<HTMLButtonElement>('#clear-log').addEventListener('click', () => {
 /* ---------- renderer ---------- */
 
 initCircuitRender(canvas);
+initScope(scopeCanvas);
 
 /* ---------- palette ---------- */
 
@@ -192,6 +199,8 @@ function buildInspector(c: Component): void {
       const v = Number(num.value);
       if (Number.isFinite(v)) circuit.setValue(c.id, v);
     });
+    range.addEventListener('change', () => circuit.commitHistory());
+    num.addEventListener('change', () => circuit.commitHistory());
   }
 
   if (c.type === 'led') {
@@ -214,6 +223,7 @@ function buildInspector(c: Component): void {
     const wr = row.querySelector<HTMLInputElement>('#insp-wiper')!;
     wr.value = String(Math.round(c.wiper * 100));
     wr.addEventListener('input', () => circuit.setWiper(c.id, Number(wr.value) / 100));
+    wr.addEventListener('change', () => circuit.commitHistory());
   }
 
   if (c.type === 'acsource') {
@@ -240,6 +250,19 @@ function buildInspector(c: Component): void {
     rot.textContent = 'Rotate';
     rot.addEventListener('click', () => circuit.rotateComponent(c.id));
     actions.append(rot);
+  }
+  if (c.type !== 'ground') {
+    const scopeV = document.createElement('button');
+    scopeV.className = 'probe';
+    scopeV.textContent = 'Scope V';
+    scopeV.title = 'Plot this part\'s voltage on the oscilloscope';
+    scopeV.addEventListener('click', () => circuit.addProbe(c.id, 'voltage'));
+    const scopeI = document.createElement('button');
+    scopeI.className = 'probe';
+    scopeI.textContent = 'Scope I';
+    scopeI.title = 'Plot the current through this part on the oscilloscope';
+    scopeI.addEventListener('click', () => circuit.addProbe(c.id, 'current'));
+    actions.append(scopeV, scopeI);
   }
   const del = document.createElement('button');
   del.className = 'danger';
@@ -323,6 +346,9 @@ function renderInspector(): void {
 function updateChrome(): void {
   const state = circuit.getState();
   emptyHint.hidden = state.components.length > 0;
+  undoBtn.disabled = !state.canUndo;
+  redoBtn.disabled = !state.canRedo;
+  renderScopeChrome();
   const warnings = state.running ? state.solution?.warnings ?? [] : [];
   if (warnings.length > 0) {
     warningBar.hidden = false;
@@ -348,6 +374,50 @@ simToggle.addEventListener('click', () => {
 mustQuery<HTMLButtonElement>('#sim-reset').addEventListener('click', () => {
   circuit.resetSimulation();
 });
+
+/* ---------- undo / redo ---------- */
+
+undoBtn.addEventListener('click', () => circuit.undo());
+redoBtn.addEventListener('click', () => circuit.redo());
+window.addEventListener('keydown', (e) => {
+  const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault();
+    if (e.shiftKey) circuit.redo(); else circuit.undo();
+  } else if (mod && (e.key === 'y' || e.key === 'Y')) {
+    e.preventDefault();
+    circuit.redo();
+  }
+});
+
+/* ---------- oscilloscope ---------- */
+
+const scopeBtn = mustQuery<HTMLButtonElement>('#scope-btn');
+scopeBtn.addEventListener('click', () => circuit.showScope(!circuit.getState().scope.visible));
+mustQuery<HTMLButtonElement>('#scope-close').addEventListener('click', () => circuit.showScope(false));
+mustQuery<HTMLButtonElement>('#scope-clear').addEventListener('click', () => circuit.clearScope());
+
+function renderScopeChrome(): void {
+  const scope = circuit.getState().scope;
+  const wasHidden = scopePanel.hidden;
+  scopePanel.hidden = !scope.visible;
+  scopeBtn.classList.toggle('active', scope.visible);
+  if (!scope.visible) return;
+  if (wasHidden) requestAnimationFrame(resizeScope);
+  scopeLegend.innerHTML = '';
+  for (const tr of scope.traces) {
+    const chip = document.createElement('span');
+    chip.className = 'scope-chip';
+    chip.innerHTML = `<span class="swatch" style="background:${tr.color}"></span>${tr.label}`;
+    const x = document.createElement('button');
+    x.textContent = '✕'; x.title = 'Remove trace';
+    x.addEventListener('click', () => circuit.removeProbe(tr.id));
+    chip.append(x);
+    scopeLegend.append(chip);
+  }
+}
 
 /* ---------- presets ---------- */
 

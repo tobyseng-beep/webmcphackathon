@@ -92,7 +92,31 @@ export type ChangeReason =
   | 'selection'
   | 'view'
   | 'running'
-  | 'solution';
+  | 'solution'
+  | 'history'
+  | 'scope';
+
+export type ScopeQuantity = 'voltage' | 'current';
+
+export interface ScopeSample {
+  t: number; // sim time, seconds
+  v: number; // value (volts, or milliamps for a current trace)
+}
+
+export interface ScopeTrace {
+  id: string; // "<componentId>:<quantity>"
+  componentId: string;
+  quantity: ScopeQuantity;
+  label: string;
+  color: string;
+  samples: ScopeSample[];
+}
+
+export interface ScopeState {
+  visible: boolean;
+  traces: ScopeTrace[];
+  windowSeconds: number; // width of the visible time window
+}
 
 export interface CircuitState {
   components: Component[];
@@ -102,6 +126,9 @@ export interface CircuitState {
   running: boolean;
   view: View;
   solution: Solution | null;
+  scope: ScopeState;
+  canUndo: boolean;
+  canRedo: boolean;
   message: string | null; // transient status line for the UI
 }
 

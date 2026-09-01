@@ -25,6 +25,11 @@
       <span class="sim-dot"></span><span id="sim-label">Simulating</span>
     </button>
     <button id="sim-reset" class="sim-reset" title="Discharge capacitors and restart the simulation">Reset</button>
+    <span class="control-sep"></span>
+    <button id="undo-btn" class="icon-btn" title="Undo (Ctrl/Cmd+Z)" disabled>↶</button>
+    <button id="redo-btn" class="icon-btn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷</button>
+    <span class="control-sep"></span>
+    <button id="scope-btn" class="sim-reset" title="Show or hide the oscilloscope">Scope</button>
   </div>
 
   <div class="topbar-right">
@@ -68,6 +73,16 @@
       </ul>
     </div>
     <div id="warning-bar" class="warning-bar" hidden></div>
+
+    <div id="scope-panel" class="scope-panel" hidden>
+      <div class="scope-head">
+        <span class="scope-title">Oscilloscope</span>
+        <div id="scope-legend" class="scope-legend"></div>
+        <button id="scope-clear" class="scope-mini" title="Remove all traces">clear</button>
+        <button id="scope-close" class="scope-mini" title="Hide the scope">✕</button>
+      </div>
+      <canvas id="scope-canvas" class="scope-canvas"></canvas>
+    </div>
   </section>
 
   <aside class="activity">

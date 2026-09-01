@@ -237,6 +237,7 @@ export function presetNames(): { name: string; title: string }[] {
 export function loadPreset(name: string): { ok: boolean; error?: string; note?: string; title?: string } {
   const preset = PRESETS[name];
   if (!preset) return { ok: false, error: `Unknown preset "${name}". Available: ${Object.keys(PRESETS).join(', ')}.` };
-  preset.build();
+  circuit.beginBatch();
+  try { preset.build(); } finally { circuit.endBatch(); }
   return { ok: true, note: preset.note, title: preset.title };
 }

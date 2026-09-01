@@ -340,6 +340,95 @@ const toolDefinitions = [
   },
 
   {
+    name: 'undo',
+    description:
+      'Undo the last change to the circuit (add, delete, wire, value change, and so on). Safe to call repeatedly to step further back. Does not affect the running simulation clock, only the circuit itself.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      const result = circuit.undo();
+      return result.ok ? { ...result, ...summary() } : { ok: false, error: 'Nothing to undo.' };
+    },
+  },
+
+  {
+    name: 'redo',
+    description:
+      'Redo the change that was just undone. Returns an error if there is nothing to redo (for example after you make a new edit, which clears the redo history).',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      const result = circuit.redo();
+      return result.ok ? { ...result, ...summary() } : { ok: false, error: 'Nothing to redo.' };
+    },
+  },
+
+  {
+    name: 'add_probe',
+    description:
+      'Add a trace to the oscilloscope so a signal is plotted over time. Give a component id and whether to plot its "voltage" or "current". The scope opens automatically. Combined with the transient parts (capacitor, inductor, AC source) this is how you show a waveform -- e.g. add_probe on a charging capacitor\'s voltage to draw the RC curve, or on an AC source to draw the sine. Keep the simulation running so the trace fills in; call reset_simulation to replay from the start.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Component id to probe.' },
+        quantity: { type: 'string', enum: ['voltage', 'current'], description: 'Which signal to plot.' },
+      },
+      required: ['id', 'quantity'],
+    },
+    execute: async (args: Record<string, unknown>) => {
+      const q = args.quantity === 'current' ? 'current' : 'voltage';
+      const result = circuit.addProbe(String(args.id), q);
+      return result.ok ? { ...result, ...summary() } : result;
+    },
+  },
+
+  {
+    name: 'read_scope',
+    description:
+      'Read what the oscilloscope has captured: each trace with its most recent value and a downsampled series of (time, value) points over the visible window. Use this to state a measured waveform fact precisely -- for example that a capacitor reached 63% of its final voltage after one time constant -- instead of estimating from the picture.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      const scope = circuit.getState().scope;
+      return {
+        ok: true,
+        window_seconds: scope.windowSeconds,
+        traces: scope.traces.map((tr) => {
+          const n = tr.samples.length;
+          const pts: { t: number; v: number }[] = [];
+          const step = Math.max(1, Math.ceil(n / 40));
+          for (let i = 0; i < n; i += step) pts.push({ t: +tr.samples[i].t.toFixed(3), v: +tr.samples[i].v.toFixed(4) });
+          const last = n > 0 ? tr.samples[n - 1] : null;
+          return {
+            id: tr.id,
+            component: tr.componentId,
+            quantity: tr.quantity,
+            unit: tr.quantity === 'voltage' ? 'V' : 'mA',
+            latest: last ? +last.v.toFixed(4) : null,
+            series: pts,
+          };
+        }),
+      };
+    },
+  },
+
+  {
+    name: 'show_scope',
+    description:
+      'Show or hide the oscilloscope panel, and optionally clear its traces. Pass visible:false to hide it, or clear:true to remove every trace.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        visible: { type: 'boolean', description: 'Show (true) or hide (false) the scope.' },
+        clear: { type: 'boolean', description: 'Remove all traces when true.' },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => {
+      if (args.clear === true) circuit.clearScope();
+      const visible = args.visible === undefined ? true : Boolean(args.visible);
+      const result = circuit.showScope(visible);
+      return { ...result, ...summary() };
+    },
+  },
+
+  {
     name: 'reset_simulation',
     description:
       'Discharge every capacitor and restart the simulation from time zero. Use this before demonstrating an RC charging curve so the capacitor starts empty, or to replay a transient from the beginning. Has no effect on a purely resistive circuit.',
