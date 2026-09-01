@@ -29,6 +29,32 @@ const COLORS = {
 
 interface Vec2 { x: number; y: number; }
 
+// Lighten (amt>0, toward white) or darken (amt<0, toward black) a hex colour.
+function adjust(hex: string, amt: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const f = (c: number) => (amt >= 0 ? Math.round(c + (255 - c) * amt) : Math.round(c * (1 + amt)));
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+
+// Draw a particle as a shaded sphere: a radial gradient lit from the upper-left
+// with a small specular highlight, so protons/neutrons/electrons read as 3D.
+function drawSphere(cx: number, cy: number, r: number, base: string, specular = true): void {
+  if (r < 2.4) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = base; ctx.fill(); return; }
+  const g = ctx.createRadialGradient(cx - r * 0.33, cy - r * 0.38, r * 0.08, cx, cy, r * 1.06);
+  g.addColorStop(0, adjust(base, 0.55));
+  g.addColorStop(0.5, base);
+  g.addColorStop(1, adjust(base, -0.42));
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+  if (specular) {
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.33, cy - r * 0.4, r * 0.26, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill();
+  }
+}
+
+let clock = 0;
+
 export function initChemRender(canvasEl: HTMLCanvasElement): void {
   canvas = canvasEl;
   ctx = canvas.getContext('2d')!;
@@ -84,7 +110,10 @@ function atomRadius(atom: Atom): number {
 function drawGrid(): void {
   const { W, H } = dims();
   const { originX, originY, scale } = chem.getState().view;
-  ctx.fillStyle = COLORS.bg;
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#ffffff');
+  bg.addColorStop(1, '#eef2f9');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = COLORS.gridDot;
   const x0 = Math.floor(originX), x1 = Math.ceil(originX + W / scale);
@@ -103,20 +132,30 @@ function drawNucleus(atom: Atom, center: Vec2, scale: number): void {
   const total = atom.protons + atom.neutrons;
   const spacing = NUCLEUS_DOT * 2.05 * scale;
   const dot = Math.max(1.5, NUCLEUS_DOT * scale);
+  const nr = nucleusRadius(atom) * scale;
   const golden = 2.399963;
+
+  // soft drop shadow to lift the nucleus off the board
+  const sy = center.y + nr * 0.18;
+  const shadow = ctx.createRadialGradient(center.x, sy, nr * 0.2, center.x, sy, nr * 1.45);
+  shadow.addColorStop(0, 'rgba(15,23,42,0.20)');
+  shadow.addColorStop(1, 'rgba(15,23,42,0)');
+  ctx.fillStyle = shadow;
+  ctx.beginPath(); ctx.arc(center.x, sy, nr * 1.45, 0, Math.PI * 2); ctx.fill();
+
+  // nucleons as little spheres; render far-from-centre first so nearer ones sit on top
+  const order: number[] = [];
+  for (let i = 0; i < total; i++) order.push(i);
+  order.sort((a, b) => b - a);
   let protonRun = 0;
-  for (let i = 0; i < total; i++) {
-    // even interleave of protons among all nucleons
-    protonRun += atom.protons;
-    const isProton = protonRun >= total ? (protonRun -= total, true) : false;
+  const protonAt: boolean[] = [];
+  for (let i = 0; i < total; i++) { protonRun += atom.protons; protonAt[i] = protonRun >= total ? (protonRun -= total, true) : false; }
+  for (const i of order) {
     const r = spacing * 0.42 * Math.sqrt(i);
     const ang = i * golden;
     const px = center.x + Math.cos(ang) * r;
     const py = center.y + Math.sin(ang) * r;
-    ctx.beginPath();
-    ctx.arc(px, py, dot, 0, Math.PI * 2);
-    ctx.fillStyle = isProton ? COLORS.proton : COLORS.neutron;
-    ctx.fill();
+    drawSphere(px, py, dot, protonAt[i] ? COLORS.proton : COLORS.neutron, dot > 4);
   }
 }
 
@@ -126,38 +165,51 @@ function drawAtom(atom: Atom, selected: boolean): void {
   const nR = nucleusRadius(atom) * scale;
   const shellCounts = shells(atom.electrons);
 
-  // shell rings + electrons
-  ctx.strokeStyle = COLORS.ring;
-  ctx.lineWidth = 1;
+  // shell rings + electrons (electrons drift slowly around their shell)
+  const nShells = shellCounts.length;
   shellCounts.forEach((count, i) => {
     const ringR = (nucleusRadius(atom) + 0.35 + (i + 1) * SHELL_GAP) * scale;
+    ctx.strokeStyle = COLORS.ring;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(center.x, center.y, ringR, 0, Math.PI * 2);
     ctx.stroke();
     const start = (i * 0.6) + Math.PI / 2;
+    const spin = clock * (0.32 / (i + 1)) * (i % 2 === 0 ? 1 : -1); // inner shells faster, alternating sense
+    const eR = Math.max(2.5, ELECTRON_DOT * scale);
     for (let j = 0; j < count; j++) {
-      const ang = start + (j / count) * Math.PI * 2;
+      const ang = start + spin + (j / count) * Math.PI * 2;
       const ex = center.x + Math.cos(ang) * ringR;
       const ey = center.y + Math.sin(ang) * ringR;
-      ctx.beginPath();
-      ctx.arc(ex, ey, Math.max(2, ELECTRON_DOT * scale), 0, Math.PI * 2);
-      ctx.fillStyle = COLORS.electron;
-      ctx.fill();
-      ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.stroke();
+      drawSphere(ex, ey, eR, COLORS.electron, eR > 3);
     }
   });
+  void nShells;
+
+  // hover feedback (not while selected)
+  if (!selected && hoverAtom === atom.id) {
+    ctx.strokeStyle = 'rgba(45,112,179,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, atomRadius(atom) * scale + 5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   // nucleus
   drawNucleus(atom, center, scale);
 
-  // selection halo
+  // selection halo: soft glow + dashed ring
   if (selected) {
+    const haloR = atomRadius(atom) * scale + 6;
+    const glow = ctx.createRadialGradient(center.x, center.y, haloR * 0.8, center.x, center.y, haloR + 12);
+    glow.addColorStop(0, 'rgba(45,112,179,0)');
+    glow.addColorStop(1, 'rgba(45,112,179,0.18)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(center.x, center.y, haloR + 12, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = COLORS.select;
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 4]);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, atomRadius(atom) * scale + 6, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(center.x, center.y, haloR, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
   }
 
@@ -183,8 +235,13 @@ function drawAtomLabel(atom: Atom, center: Vec2, scale: number): void {
 
   const boxW = Math.max(symW + chW, l2W) + 16;
   const boxH = 34;
+  ctx.save();
+  ctx.shadowColor = 'rgba(16,24,40,0.14)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 2;
   ctx.fillStyle = COLORS.labelBg;
-  roundRect(center.x - boxW / 2, y - 10, boxW, boxH, 6); ctx.fill();
+  roundRect(center.x - boxW / 2, y - 10, boxW, boxH, 7); ctx.fill();
+  ctx.restore();
 
   ctx.fillStyle = info.charge === 0 ? COLORS.ink : info.charge > 0 ? COLORS.proton : COLORS.electron;
   ctx.textAlign = 'left';
@@ -227,6 +284,13 @@ function drawBond(bond: Bond, selected: boolean): void {
   const perp = { x: -uy, y: ux };
 
   ctx.lineCap = 'round';
+  // soft shadow under the bond for a little lift
+  ctx.save();
+  ctx.strokeStyle = 'rgba(16,24,40,0.10)';
+  ctx.lineWidth = bond.kind === 'ionic' ? 3.5 : (2.4 + (bond.order - 1) * 4);
+  ctx.beginPath(); ctx.moveTo(start.x, start.y + 1.5); ctx.lineTo(end.x, end.y + 1.5); ctx.stroke();
+  ctx.restore();
+
   if (bond.kind === 'ionic') {
     ctx.strokeStyle = selected ? COLORS.select : COLORS.ionic;
     ctx.lineWidth = selected ? 3 : 2.2;
@@ -307,7 +371,14 @@ function draw(): void {
   ctx.restore();
 }
 
-function frame(): void { draw(); requestAnimationFrame(frame); }
+let lastFrame = performance.now();
+function frame(now: number): void {
+  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  lastFrame = now;
+  clock += dt;
+  draw();
+  requestAnimationFrame(frame);
+}
 
 // ---- hit testing ----
 
