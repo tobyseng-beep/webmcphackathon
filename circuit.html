@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smarterboard — an agent-drivable circuit sandbox</title>
+<meta name="description" content="A beginner circuit simulator an AI agent can wire and probe directly through WebMCP: it places parts, runs wires, flips switches and reads the meter while it explains.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22g%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%232d70b3%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%236042a6%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22url%28%23g%29%22%2F%3E%3Cpath%20d%3D%22M12%2032%20h10%20l4%20-12%20l8%2024%20l4%20-12%20h14%22%20stroke%3D%22%23fff%22%20stroke-width%3D%224%22%20fill%3D%22none%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="circuit.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a class="mark" href="index.html" title="Back to the menu" aria-label="Back to the menu">∿</a>
+    <div>
+      <h1>Smarterboard</h1>
+      <p>a circuit board your agent can wire</p>
+    </div>
+  </div>
+
+  <div class="sim-controls">
+    <button id="sim-toggle" class="sim-toggle" title="Pause or resume the live simulation">
+      <span class="sim-dot"></span><span id="sim-label">Simulating</span>
+    </button>
+    <button id="sim-reset" class="sim-reset" title="Discharge capacitors and restart the simulation">Reset</button>
+  </div>
+
+  <div class="topbar-right">
+    <label class="preset-wrap">
+      <span class="sr-only">Load a starter circuit</span>
+      <select id="preset-select">
+        <option value="">Load a starter circuit…</option>
+      </select>
+    </label>
+    <div id="mcp-badge" class="badge checking" title="WebMCP availability">
+      <span class="dot"></span><span id="mcp-text">checking…</span>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <div class="panel-head"><h2>Parts</h2></div>
+      <div id="palette" class="palette"></div>
+      <p class="palette-hint">Click a part to drop it, then drag it into place. Click a pin, then another pin, to wire them.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Selected</h2></div>
+      <div id="inspector-panel" class="inspector-panel">
+        <p class="empty">Select a part on the board to edit it. Press <code>R</code> to rotate, <code>Delete</code> to remove.</p>
+      </div>
+    </section>
+  </aside>
+
+  <section class="stage">
+    <canvas id="circuit-canvas"></canvas>
+    <div id="empty-hint" class="empty-hint">
+      <p>Ask your agent something like:</p>
+      <ul>
+        <li>“Build a circuit that lights a red LED from a 9V battery, safely.”</li>
+        <li>“Why is my LED not lighting up?” (after you wire one)</li>
+        <li>“Add a switch so I can turn the LED on and off.”</li>
+        <li>“What’s the current through the resistor right now?”</li>
+      </ul>
+    </div>
+    <div id="warning-bar" class="warning-bar" hidden></div>
+  </section>
+
+  <aside class="activity">
+    <div class="panel-head">
+      <h2>Agent activity</h2>
+      <button id="clear-log" class="ghost" title="Clear the log">clear</button>
+    </div>
+    <div id="log" class="log">
+      <p class="empty">Tool calls from the agent appear here as they arrive.</p>
+    </div>
+
+    <details class="inspector">
+      <summary>Tool inspector <span class="hint">(run a tool by hand)</span></summary>
+      <label class="sr-only" for="tool-select">Tool</label>
+      <select id="tool-select"></select>
+      <p id="tool-desc" class="tool-desc"></p>
+      <textarea id="tool-args" spellcheck="false" rows="4">{}</textarea>
+      <button id="tool-run" class="primary">Run tool</button>
+      <pre id="tool-result" class="tool-result"></pre>
+    </details>
+  </aside>
+</main>
+
+<script type="module" src="/src/circuit/main.ts"></script>
+</body>
+</html>

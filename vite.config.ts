@@ -7,6 +7,7 @@ export default defineConfig({
       input: {
         main: 'index.html',
         graph: 'graph.html',
+        circuit: 'circuit.html',
         probe: 'probe.html',
       },
     },

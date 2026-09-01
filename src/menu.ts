@@ -61,10 +61,10 @@ const CATALOG: Record<string, CatalogEntry> = {
     about: 'Plot z=f(x,y) surfaces with an orbitable camera. Supports the full graphing toolset once open.',
   },
   circuits: {
-    href: null,
+    href: 'circuit.html',
     title: 'Circuit simulator',
-    ready: false,
-    about: 'Not built yet. For RC and RL behaviour today, open the 2D grapher and load the rc_charging lesson.',
+    ready: true,
+    about: 'Build beginner DC circuits from batteries, resistors, LEDs, lamps and switches. Place parts, wire them pin to pin, flip switches, and read the live current and voltage. Supports the full circuit toolset once open.',
   },
   physics: {
     href: null,
