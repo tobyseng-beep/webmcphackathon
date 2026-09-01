@@ -3,6 +3,7 @@
 // operation -- the agent can always read back where the camera actually is.
 
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getState, scope, setCamera } from './store';
 import type { Annotation, Expression, Viewport } from './types';
 
@@ -103,7 +104,9 @@ function buildAxes(view: Viewport): void {
   axesGroup = new THREE.Group();
   const mk = (a: THREE.Vector3, b: THREE.Vector3, color: THREE.ColorRepresentation) => {
     const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
-    return new THREE.Line(geo, new THREE.LineBasicMaterial({ color }));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, depthTest: false }));
+    line.renderOrder = 2;
+    return line;
   };
   const V = THREE.Vector3;
   const x0 = world.x(0), y0 = world.y(0), z0 = world.z(0);
@@ -120,6 +123,14 @@ function buildAxes(view: Viewport): void {
   const grid = new THREE.GridHelper(gridSize, 20, 0xc7d0dc, 0xe4e9f0);
   grid.rotation.x = Math.PI / 2; // GridHelper is XZ by default; we want XY
   grid.position.z = z0;
+  const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
+  for (const material of gridMaterials) {
+    material.depthTest = false;
+    material.depthWrite = false;
+    material.transparent = false;
+    material.opacity = 1;
+  }
+  grid.renderOrder = 0;
   axesGroup.add(grid);
 
   sceneRoot.add(axesGroup);
@@ -133,10 +144,14 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
   const fn = expr.fn;
   if (!fn) return new THREE.BufferGeometry();
   const N = GRID;
-  const positions = new Float32Array((N + 1) * (N + 1) * 3);
-  const colors = new Float32Array((N + 1) * (N + 1) * 3);
-  const zs = new Float32Array((N + 1) * (N + 1));
-  const valid = new Uint8Array((N + 1) * (N + 1));
+
+  interface SurfaceVertex {
+    x: number;
+    y: number;
+    z: number;
+  }
+
+  const samples: Array<SurfaceVertex | null> = new Array((N + 1) * (N + 1));
 
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
@@ -147,41 +162,82 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
       try { evaluated = fn.evaluate(base); } catch { evaluated = NaN; }
       const z = typeof evaluated === 'number' ? evaluated : Number(evaluated);
       const k = j * (N + 1) + i;
-      zs[k] = z;
-      valid[k] = Number.isFinite(z) && z >= view.zmin && z <= view.zmax ? 1 : 0;
+      samples[k] = Number.isFinite(z) ? { x, y, z } : null;
     }
   }
 
   const cold = new THREE.Color('#2d70b3');
   const warm = new THREE.Color('#c74440');
   const tmp = new THREE.Color();
+  const positions: number[] = [];
+  const colors: number[] = [];
 
-  for (let j = 0; j <= N; j++) {
-    for (let i = 0; i <= N; i++) {
-      const k = j * (N + 1) + i;
-      const z = zs[k];
-      positions[k * 3 + 0] = world.x(xmin + (i / N) * (xmax - xmin));
-      positions[k * 3 + 1] = world.y(ymin + (j / N) * (ymax - ymin));
-      positions[k * 3 + 2] = Number.isFinite(z) ? world.z(z) : 0;
-      const t = (z - view.zmin) / (view.zmax - view.zmin);
-      tmp.copy(cold).lerp(warm, Number.isFinite(t) ? t : 0.5);
-      colors[k * 3 + 0] = tmp.r; colors[k * 3 + 1] = tmp.g; colors[k * 3 + 2] = tmp.b;
+  const interpolateAtZ = (a: SurfaceVertex, b: SurfaceVertex, z: number): SurfaceVertex => {
+    const t = (z - a.z) / (b.z - a.z);
+    return {
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      z,
+    };
+  };
+
+  const clipAtZ = (
+    polygon: SurfaceVertex[],
+    bound: number,
+    keepAbove: boolean,
+  ): SurfaceVertex[] => {
+    if (polygon.length === 0) return polygon;
+    const clipped: SurfaceVertex[] = [];
+    let previous = polygon[polygon.length - 1];
+    let previousInside = keepAbove ? previous.z >= bound : previous.z <= bound;
+
+    for (const current of polygon) {
+      const currentInside = keepAbove ? current.z >= bound : current.z <= bound;
+      if (currentInside !== previousInside) {
+        clipped.push(interpolateAtZ(previous, current, bound));
+      }
+      if (currentInside) clipped.push(current);
+      previous = current;
+      previousInside = currentInside;
     }
-  }
+    return clipped;
+  };
 
-  const indices = [];
+  const appendVertex = (vertex: SurfaceVertex): void => {
+    positions.push(world.x(vertex.x), world.y(vertex.y), world.z(vertex.z));
+    const t = Math.min(1, Math.max(0, (vertex.z - view.zmin) / (view.zmax - view.zmin)));
+    tmp.copy(cold).lerp(warm, t);
+    colors.push(tmp.r, tmp.g, tmp.b);
+  };
+
+  const appendTriangle = (
+    a: SurfaceVertex | null,
+    b: SurfaceVertex | null,
+    c: SurfaceVertex | null,
+  ): void => {
+    if (!a || !b || !c) return;
+    let polygon = clipAtZ([a, b, c], view.zmin, true);
+    polygon = clipAtZ(polygon, view.zmax, false);
+    for (let i = 1; i + 1 < polygon.length; i++) {
+      appendVertex(polygon[0]);
+      appendVertex(polygon[i]);
+      appendVertex(polygon[i + 1]);
+    }
+  };
+
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       const a = j * (N + 1) + i, b = a + 1, c = a + (N + 1), d = c + 1;
-      if (!valid[a] || !valid[b] || !valid[c] || !valid[d]) continue;
-      indices.push(a, c, b, b, c, d);
+      appendTriangle(samples[a], samples[c], samples[b]);
+      appendTriangle(samples[b], samples[c], samples[d]);
     }
   }
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geo.setIndex(indices);
+  const raw = new THREE.BufferGeometry();
+  raw.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  raw.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const geo = mergeVertices(raw);
+  raw.dispose();
   geo.computeVertexNormals();
   return geo;
 }
@@ -208,9 +264,14 @@ export function rebuild(): void {
       existing.geometry = geo;
     } else {
       const mat = new THREE.MeshLambertMaterial({
-        vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.96,
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
       });
       const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = 1;
       sceneRoot.add(mesh);
       surfaces.set(expr.id, mesh);
     }

@@ -315,6 +315,25 @@ export function setCamera(patch: Partial<CameraState>): Result<{ camera: CameraS
 
 export function setMode(mode: BoardMode): Result<{ mode: BoardMode }> {
   if (mode !== '2d' && mode !== '3d') return { ok: false, error: 'mode must be "2d" or "3d".' };
+  if (mode === '3d' && state.mode !== '3d') {
+    const extent = Math.max(
+      Math.abs(state.viewport.xmin),
+      Math.abs(state.viewport.xmax),
+      Math.abs(state.viewport.ymin),
+      Math.abs(state.viewport.ymax),
+      Math.abs(state.viewport.zmin),
+      Math.abs(state.viewport.zmax),
+      1,
+    );
+    state.viewport = {
+      xmin: -extent,
+      xmax: extent,
+      ymin: -extent,
+      ymax: extent,
+      zmin: -extent,
+      zmax: extent,
+    };
+  }
   state.mode = mode;
   notify('mode');
   return { ok: true, mode };
