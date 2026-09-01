@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { getState, scope, setCamera } from './store';
 import type { Annotation, Expression, Viewport } from './types';
 
-const SPAN = 10; // world half-width; viewport is normalized into [-SPAN, SPAN]
+const SPAN = 10;
 const GRID = 96;
 
 let renderer: THREE.WebGLRenderer;
@@ -15,7 +15,8 @@ let camera: THREE.PerspectiveCamera;
 let container: HTMLDivElement;
 let labelLayer: HTMLDivElement;
 const surfaces = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>>();
-let axesGroup: THREE.Group;
+let axesGroup: THREE.Group | null = null;
+let axesViewportKey = '';
 let ready = false;
 
 export function initRender3D(containerEl: HTMLDivElement, labelEl: HTMLDivElement): void {
@@ -39,7 +40,7 @@ export function initRender3D(containerEl: HTMLDivElement, labelEl: HTMLDivElemen
   fill.position.set(-20, -10, 12);
   sceneRoot.add(fill);
 
-  buildAxes();
+  buildAxes(getState().viewport);
   attachInteraction();
   resize3D();
   window.addEventListener('resize', resize3D);
@@ -56,27 +57,78 @@ export function resize3D(): void {
   camera.updateProjectionMatrix();
 }
 
-function buildAxes(): void {
+interface WorldTransform {
+  x: (value: number) => number;
+  y: (value: number) => number;
+  z: (value: number) => number;
+}
+
+function worldTransform(view: Viewport): WorldTransform {
+  const maxExtent = Math.max(
+    Math.abs(view.xmin),
+    Math.abs(view.xmax),
+    Math.abs(view.ymin),
+    Math.abs(view.ymax),
+    Math.abs(view.zmin),
+    Math.abs(view.zmax),
+    Number.EPSILON,
+  );
+  const scale = SPAN / maxExtent;
+
+  return {
+    x: (value) => value * scale,
+    y: (value) => value * scale,
+    z: (value) => value * scale,
+  };
+}
+
+function buildAxes(view: Viewport): void {
+  const viewportKey = [
+    view.xmin, view.xmax, view.ymin, view.ymax, view.zmin, view.zmax,
+  ].join(':');
+  if (axesGroup && viewportKey === axesViewportKey) return;
+
+  if (axesGroup) {
+    sceneRoot.remove(axesGroup);
+    axesGroup.traverse((object) => {
+      if (object instanceof THREE.Line) {
+        object.geometry.dispose();
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) material.dispose();
+      }
+    });
+  }
+
+  const world = worldTransform(view);
   axesGroup = new THREE.Group();
   const mk = (a: THREE.Vector3, b: THREE.Vector3, color: THREE.ColorRepresentation) => {
     const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
     return new THREE.Line(geo, new THREE.LineBasicMaterial({ color }));
   };
   const V = THREE.Vector3;
-  axesGroup.add(mk(new V(-SPAN, 0, 0), new V(SPAN, 0, 0), 0xc74440));
-  axesGroup.add(mk(new V(0, -SPAN, 0), new V(0, SPAN, 0), 0x388c46));
-  axesGroup.add(mk(new V(0, 0, -SPAN), new V(0, 0, SPAN), 0x2d70b3));
+  const x0 = world.x(0), y0 = world.y(0), z0 = world.z(0);
+  axesGroup.add(mk(new V(world.x(view.xmin), y0, z0), new V(world.x(view.xmax), y0, z0), 0xc74440));
+  axesGroup.add(mk(new V(x0, world.y(view.ymin), z0), new V(x0, world.y(view.ymax), z0), 0x388c46));
+  axesGroup.add(mk(new V(x0, y0, world.z(view.zmin)), new V(x0, y0, world.z(view.zmax)), 0x2d70b3));
 
-  const grid = new THREE.GridHelper(SPAN * 2, 20, 0xc7d0dc, 0xe4e9f0);
+  const gridSize = Math.max(
+    Math.abs(world.x(view.xmin)),
+    Math.abs(world.x(view.xmax)),
+    Math.abs(world.y(view.ymin)),
+    Math.abs(world.y(view.ymax)),
+  ) * 2;
+  const grid = new THREE.GridHelper(gridSize, 20, 0xc7d0dc, 0xe4e9f0);
   grid.rotation.x = Math.PI / 2; // GridHelper is XZ by default; we want XY
-  grid.position.z = -SPAN;
+  grid.position.z = z0;
   axesGroup.add(grid);
 
   sceneRoot.add(axesGroup);
+  axesViewportKey = viewportKey;
 }
 
 function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry {
   const { xmin, xmax, ymin, ymax } = view;
+  const world = worldTransform(view);
   const base = scope();
   const fn = expr.fn;
   if (!fn) return new THREE.BufferGeometry();
@@ -84,8 +136,8 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
   const positions = new Float32Array((N + 1) * (N + 1) * 3);
   const colors = new Float32Array((N + 1) * (N + 1) * 3);
   const zs = new Float32Array((N + 1) * (N + 1));
+  const valid = new Uint8Array((N + 1) * (N + 1));
 
-  let zlo = Infinity, zhi = -Infinity;
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
       const x = xmin + (i / N) * (xmax - xmin);
@@ -96,18 +148,9 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
       const z = typeof evaluated === 'number' ? evaluated : Number(evaluated);
       const k = j * (N + 1) + i;
       zs[k] = z;
-      if (Number.isFinite(z)) { if (z < zlo) zlo = z; if (z > zhi) zhi = z; }
+      valid[k] = Number.isFinite(z) && z >= view.zmin && z <= view.zmax ? 1 : 0;
     }
   }
-  if (!Number.isFinite(zlo)) { zlo = -1; zhi = 1; }
-  if (zhi - zlo < 1e-9) { zhi = zlo + 1; }
-
-  // Clip extreme values so one pole does not flatten the whole surface.
-  const clipLo = Math.max(zlo, view.zmin);
-  const clipHi = Math.min(zhi, view.zmax);
-  const lo = clipHi > clipLo ? clipLo : zlo;
-  const hi = clipHi > clipLo ? clipHi : zhi;
-  const zScale = SPAN / Math.max(Math.abs(lo), Math.abs(hi), 1e-6);
 
   const cold = new THREE.Color('#2d70b3');
   const warm = new THREE.Color('#c74440');
@@ -117,11 +160,10 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
     for (let i = 0; i <= N; i++) {
       const k = j * (N + 1) + i;
       const z = zs[k];
-      const clamped = Number.isFinite(z) ? Math.min(hi, Math.max(lo, z)) : 0;
-      positions[k * 3 + 0] = -SPAN + (i / N) * SPAN * 2;
-      positions[k * 3 + 1] = -SPAN + (j / N) * SPAN * 2;
-      positions[k * 3 + 2] = clamped * zScale;
-      const t = (clamped - lo) / (hi - lo);
+      positions[k * 3 + 0] = world.x(xmin + (i / N) * (xmax - xmin));
+      positions[k * 3 + 1] = world.y(ymin + (j / N) * (ymax - ymin));
+      positions[k * 3 + 2] = Number.isFinite(z) ? world.z(z) : 0;
+      const t = (z - view.zmin) / (view.zmax - view.zmin);
       tmp.copy(cold).lerp(warm, Number.isFinite(t) ? t : 0.5);
       colors[k * 3 + 0] = tmp.r; colors[k * 3 + 1] = tmp.g; colors[k * 3 + 2] = tmp.b;
     }
@@ -131,7 +173,7 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       const a = j * (N + 1) + i, b = a + 1, c = a + (N + 1), d = c + 1;
-      if (![zs[a], zs[b], zs[c], zs[d]].every(Number.isFinite)) continue;
+      if (!valid[a] || !valid[b] || !valid[c] || !valid[d]) continue;
       indices.push(a, c, b, b, c, d);
     }
   }
@@ -141,13 +183,13 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.setIndex(indices);
   geo.computeVertexNormals();
-  geo.userData.zScale = zScale;
   return geo;
 }
 
 export function rebuild(): void {
   if (!ready) return;
   const state = getState();
+  buildAxes(state.viewport);
   const wanted = state.expressions.filter((e) => e.kind === 'explicit_z' && e.visible && !e.error);
   const wantedIds = new Set(wanted.map((e) => e.id));
 
@@ -164,13 +206,11 @@ export function rebuild(): void {
     if (existing) {
       existing.geometry.dispose();
       existing.geometry = geo;
-      existing.userData.zScale = geo.userData.zScale;
     } else {
       const mat = new THREE.MeshLambertMaterial({
         vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.96,
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.userData.zScale = geo.userData.zScale;
       sceneRoot.add(mesh);
       surfaces.set(expr.id, mesh);
     }
@@ -191,14 +231,11 @@ function applyCamera(): void {
 }
 
 function worldFor(note: Annotation): THREE.Vector3 {
-  const { xmin, xmax, ymin, ymax } = getState().viewport;
-  const anySurface = surfaces.values().next().value;
-  const storedScale = anySurface?.userData.zScale;
-  const zScale = typeof storedScale === 'number' ? storedScale : 1;
+  const world = worldTransform(getState().viewport);
   return new THREE.Vector3(
-    -SPAN + ((note.x - xmin) / (xmax - xmin)) * SPAN * 2,
-    -SPAN + ((note.y - ymin) / (ymax - ymin)) * SPAN * 2,
-    (note.z ?? 0) * zScale
+    world.x(note.x),
+    world.y(note.y),
+    world.z(note.z ?? 0),
   );
 }
 
