@@ -11,7 +11,7 @@ export interface CatalogEntry {
   blurb: string; // shown in the palette tooltip and returned to the agent
   pins: PinDef[];
   defaultValue: number; // volts or ohms; 0 where unused
-  unit: '' | 'V' | 'Ω' | 'µF';
+  unit: '' | 'V' | 'Ω' | 'µF' | 'mH' | 'mA' | 'A';
   valueMin: number;
   valueMax: number;
   polar: boolean; // does pin order matter electrically?
@@ -111,6 +111,115 @@ export const CATALOG: Record<ComponentType, CatalogEntry> = {
     valueMax: 0,
     polar: true,
   },
+  inductor: {
+    type: 'inductor',
+    title: 'Inductor',
+    blurb: 'Stores energy in a magnetic field and resists sudden changes in current. Set its value in millihenries. It acts like an open circuit the instant power is applied, then ramps up to a full short as its current builds along an exponential curve. Pair it with a resistor to see the RL curve.',
+    pins: HORIZONTAL,
+    defaultValue: 100,
+    unit: 'mH',
+    valueMin: 1,
+    valueMax: 10000,
+    polar: false,
+  },
+  potentiometer: {
+    type: 'potentiometer',
+    title: 'Potentiometer',
+    blurb: 'A variable resistor with three pins: two ends ("a" and "b") and a "wiper" that taps off a point in between. Set its total resistance in ohms and slide the wiper from 0 to 1 to divide the voltage. This is the knob behind volume controls and LED dimmers.',
+    pins: [
+      { name: 'a', dx: -1, dy: 0 },
+      { name: 'b', dx: 1, dy: 0 },
+      { name: 'wiper', dx: 0, dy: -1 },
+    ],
+    defaultValue: 10000,
+    unit: 'Ω',
+    valueMin: 100,
+    valueMax: 1000000,
+    polar: false,
+  },
+  currentsource: {
+    type: 'currentsource',
+    title: 'Current source',
+    blurb: 'Pushes a fixed current out of its "pos" terminal no matter what, the current-driven counterpart of a battery. Set its value in milliamps. Always give it a path to flow through — an open current source drives its voltage sky-high.',
+    pins: [
+      { name: 'pos', dx: -1, dy: 0 },
+      { name: 'neg', dx: 1, dy: 0 },
+    ],
+    defaultValue: 10,
+    unit: 'mA',
+    valueMin: 0,
+    valueMax: 1000,
+    polar: true,
+  },
+  acsource: {
+    type: 'acsource',
+    title: 'AC source',
+    blurb: 'An alternating voltage source whose output swings as a sine wave. Set its peak amplitude in volts; its frequency in hertz is a separate setting. The simulation must be running to see it oscillate — watch the current reverse direction each half cycle, especially through a capacitor or inductor.',
+    pins: [
+      { name: 'pos', dx: -1, dy: 0 },
+      { name: 'neg', dx: 1, dy: 0 },
+    ],
+    defaultValue: 5,
+    unit: 'V',
+    valueMin: 0,
+    valueMax: 24,
+    polar: true,
+  },
+  fuse: {
+    type: 'fuse',
+    title: 'Fuse',
+    blurb: 'A safety part that behaves like a wire until the current through it exceeds its rating, then blows open permanently to protect the rest of the circuit. Set its rating in amps. Reset the simulation to restore a blown fuse.',
+    pins: HORIZONTAL,
+    defaultValue: 1,
+    unit: 'A',
+    valueMin: 0.1,
+    valueMax: 20,
+    polar: false,
+  },
+  voltmeter: {
+    type: 'voltmeter',
+    title: 'Voltmeter',
+    blurb: 'Measures the voltage between its two pins without disturbing the circuit (it draws essentially no current). Wire it in parallel with whatever you want to measure across.',
+    pins: HORIZONTAL,
+    defaultValue: 0,
+    unit: '',
+    valueMin: 0,
+    valueMax: 0,
+    polar: false,
+  },
+  ammeter: {
+    type: 'ammeter',
+    title: 'Ammeter',
+    blurb: 'Measures the current flowing through it, acting like a plain wire otherwise. Wire it in series, in the path whose current you want to read.',
+    pins: HORIZONTAL,
+    defaultValue: 0,
+    unit: '',
+    valueMin: 0,
+    valueMax: 0,
+    polar: false,
+  },
+  motor: {
+    type: 'motor',
+    title: 'Motor',
+    blurb: 'A small DC motor, modelled as a resistive load that spins when current flows through it. Set its resistance in ohms — lower means more current and faster spin. Not polar; reversing it would just spin it the other way.',
+    pins: HORIZONTAL,
+    defaultValue: 50,
+    unit: 'Ω',
+    valueMin: 1,
+    valueMax: 10000,
+    polar: false,
+  },
+  buzzer: {
+    type: 'buzzer',
+    title: 'Buzzer',
+    blurb: 'A piezo buzzer, modelled as a resistive load that sounds when current flows. Set its resistance in ohms. Handy as an audible "is current flowing?" indicator.',
+    pins: HORIZONTAL,
+    defaultValue: 100,
+    unit: 'Ω',
+    valueMin: 1,
+    valueMax: 10000,
+    polar: false,
+  },
   ground: {
     type: 'ground',
     title: 'Ground',
@@ -125,7 +234,9 @@ export const CATALOG: Record<ComponentType, CatalogEntry> = {
 };
 
 export const COMPONENT_ORDER: ComponentType[] = [
-  'battery', 'resistor', 'led', 'lamp', 'switch', 'capacitor', 'diode', 'ground',
+  'battery', 'resistor', 'led', 'lamp', 'switch',
+  'capacitor', 'inductor', 'diode', 'potentiometer', 'currentsource',
+  'acsource', 'fuse', 'voltmeter', 'ammeter', 'motor', 'buzzer', 'ground',
 ];
 
 // Forward voltage and on-resistance per LED colour. These set where the LED
@@ -146,6 +257,11 @@ export const BATTERY_INTERNAL_R = 0.05; // ohms; keeps a dead short finite while
 export const DIODE_VF = 0.7; // silicon forward drop
 export const DIODE_RON = 5; // on-resistance
 export const DIODE_WARN_CURRENT = 1.0; // amps
+export const VOLTMETER_R = 1e9; // effectively open
+export const AMMETER_R = 1e-3; // effectively a wire
+export const FUSE_R = 1e-3; // intact fuse
+export const MOTOR_MIN_POWER = 0.02; // watts to visibly spin
+export const BUZZER_MIN_POWER = 0.02; // watts to sound
 
 function rotate(dx: number, dy: number, rotation: Rotation): Vec2 {
   switch (rotation) {

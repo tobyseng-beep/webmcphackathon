@@ -5,15 +5,21 @@
 
 import type { Component, ElementResult, Solution, Wire } from './types';
 import {
+  AMMETER_R,
   BATTERY_INTERNAL_R,
+  BUZZER_MIN_POWER,
   DIODE_RON,
   DIODE_VF,
   DIODE_WARN_CURRENT,
+  FUSE_R,
   LED_BURN_CURRENT,
   LED_FULL_CURRENT,
   LED_ON_CURRENT,
   LED_SPEC,
   LED_WARN_CURRENT,
+  MOTOR_MIN_POWER,
+  VOLTMETER_R,
+  pinNames,
 } from './components';
 
 const GMIN = 1e-9; // ties every node weakly to reference so nothing floats
@@ -88,15 +94,19 @@ function solveLinear(A: number[][], z: number[]): number[] | null {
 function ref(compId: string, pin: string): string { return `${compId}.${pin}`; }
 
 interface SolveOpts {
-  dt?: number; // seconds; > 0 advances capacitors one transient step, 0/undefined takes a snapshot
+  dt?: number; // seconds; > 0 advances reactive parts one transient step, 0/undefined snapshots
   capVoltage?: Record<string, number>; // held capacitor voltages entering this solve
+  indCurrent?: Record<string, number>; // held inductor currents entering this solve
+  time?: number; // absolute sim time, for AC sources
 }
 
 export function solve(components: Component[], wires: Wire[], opts: SolveOpts = {}): Solution {
   const priorCap = opts.capVoltage ?? {};
+  const priorInd = opts.indCurrent ?? {};
+  const time = opts.time ?? 0;
   const dt = opts.dt ?? 0;
   const empty: Solution = {
-    ok: false, nodeVoltage: {}, pinNode: {}, results: {}, capVoltage: {}, warnings: [],
+    ok: false, nodeVoltage: {}, pinNode: {}, results: {}, capVoltage: {}, indCurrent: {}, warnings: [],
   };
   if (components.length === 0) return { ...empty, ok: true };
 
@@ -105,13 +115,7 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
   // Every pin is a node; wires and grounds merge them.
   const pinRefsByComp = new Map<string, string[]>();
   for (const c of components) {
-    const pins = c.type === 'ground'
-      ? ['gnd']
-      : c.type === 'battery'
-        ? ['pos', 'neg']
-        : c.type === 'led' || c.type === 'diode'
-          ? ['anode', 'cathode']
-          : ['a', 'b'];
+    const pins = pinNames(c.type);
     const refs = pins.map((p) => ref(c.id, p));
     refs.forEach((r) => ds.add(r));
     pinRefsByComp.set(c.id, refs);
@@ -140,8 +144,8 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
   let referenceNode: number;
   if (grounds.length > 0) referenceNode = nodeOf(grounds[0]);
   else {
-    const firstBattery = components.find((c) => c.type === 'battery');
-    referenceNode = firstBattery ? pinNode[ref(firstBattery.id, 'neg')] : 0;
+    const firstSource = components.find((c) => c.type === 'battery' || c.type === 'acsource');
+    referenceNode = firstSource ? pinNode[ref(firstSource.id, 'neg')] : 0;
   }
 
   // Assign matrix rows to every non-reference node.
@@ -154,12 +158,14 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
   const rowOf = (nodeId: number): number => (nodeId === referenceNode ? -1 : nodeRow.get(nodeId)!);
 
   // Batteries need an internal node (for series resistance) and a current unknown.
-  const batteries = components.filter((c) => c.type === 'battery');
+  const emfOf = (c: Component): number =>
+    c.type === 'acsource' ? c.value * Math.sin(2 * Math.PI * (c.freq || 1) * time) : c.value;
+  const vsources = components.filter((c) => c.type === 'battery' || c.type === 'acsource');
   const internalRow = new Map<string, number>();
-  for (const b of batteries) internalRow.set(b.id, rows++);
+  for (const b of vsources) internalRow.set(b.id, rows++);
   const sourceCol = new Map<string, number>();
   let sourceCount = 0;
-  for (const b of batteries) sourceCol.set(b.id, rows + sourceCount++);
+  for (const b of vsources) sourceCol.set(b.id, rows + sourceCount++);
   const N = rows + sourceCount;
 
   const diodes = components.filter((c) => c.type === 'led' || c.type === 'diode');
@@ -189,14 +195,48 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
     for (let r = 0; r < rows; r++) A[r][r] += GMIN;
 
     for (const c of components) {
-      if (c.type === 'resistor' || c.type === 'lamp') {
+      if (c.type === 'resistor' || c.type === 'lamp' || c.type === 'motor' || c.type === 'buzzer') {
         const R = Math.max(1e-6, c.value);
         const [pa, pb] = pinRefsByComp.get(c.id)!;
         stampR(rowOf(pinNode[pa]), rowOf(pinNode[pb]), 1 / R);
-      } else if (c.type === 'switch') {
-        const R = c.closed ? R_SWITCH_CLOSED : R_OPEN;
+      } else if (c.type === 'switch' || c.type === 'fuse' || c.type === 'voltmeter' || c.type === 'ammeter') {
+        const R = c.type === 'switch' ? (c.closed ? R_SWITCH_CLOSED : R_OPEN)
+          : c.type === 'fuse' ? (c.blown ? R_OPEN : FUSE_R)
+          : c.type === 'voltmeter' ? VOLTMETER_R
+          : AMMETER_R;
         const [pa, pb] = pinRefsByComp.get(c.id)!;
         stampR(rowOf(pinNode[pa]), rowOf(pinNode[pb]), 1 / R);
+      } else if (c.type === 'potentiometer') {
+        const R = Math.max(1e-6, c.value);
+        const w = Math.min(1, Math.max(0, c.wiper));
+        const ra = rowOf(pinNode[ref(c.id, 'a')]);
+        const rb = rowOf(pinNode[ref(c.id, 'b')]);
+        const rw = rowOf(pinNode[ref(c.id, 'wiper')]);
+        stampR(ra, rw, 1 / Math.max(1e-3, R * w));
+        stampR(rw, rb, 1 / Math.max(1e-3, R * (1 - w)));
+      } else if (c.type === 'currentsource') {
+        const I = c.value * 1e-3; // mA -> A, flows out of pos into the circuit
+        const rp = rowOf(pinNode[ref(c.id, 'pos')]);
+        const rn = rowOf(pinNode[ref(c.id, 'neg')]);
+        if (rp >= 0) z[rp] += I;
+        if (rn >= 0) z[rn] -= I;
+      } else if (c.type === 'inductor') {
+        const L = Math.max(1e-9, c.value * 1e-3); // mH -> H
+        const [pa, pb] = pinRefsByComp.get(c.id)!;
+        const ra = rowOf(pinNode[pa]);
+        const rb = rowOf(pinNode[pb]);
+        const iprev = priorInd[c.id] ?? 0;
+        if (dt > 0) {
+          // backward Euler: i = (dt/L)(Va-Vb) + iprev
+          const geq = dt / L;
+          stampR(ra, rb, geq);
+          if (ra >= 0) z[ra] -= iprev;
+          if (rb >= 0) z[rb] += iprev;
+        } else {
+          // snapshot: holds its current, i.e. a current source of iprev (open at t=0)
+          if (ra >= 0) z[ra] -= iprev;
+          if (rb >= 0) z[rb] += iprev;
+        }
       } else if (c.type === 'led' || c.type === 'diode') {
         const spec = diodeSpec(c);
         const on = diodeState.get(c.id)!;
@@ -222,19 +262,19 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
         stampR(ra, rb, geq);
         if (ra >= 0) z[ra] += geq * vprev;
         if (rb >= 0) z[rb] -= geq * vprev;
-      } else if (c.type === 'battery') {
+      } else if (c.type === 'battery' || c.type === 'acsource') {
         const pPos = rowOf(pinNode[ref(c.id, 'pos')]);
         const pNeg = rowOf(pinNode[ref(c.id, 'neg')]);
         const xRow = internalRow.get(c.id)!;
         const col = sourceCol.get(c.id)!;
         // Rint between pos and internal node
         stampR(pPos, xRow, 1 / BATTERY_INTERNAL_R);
-        // ideal source between internal (+) and neg (−), emf = value
+        // ideal source between internal (+) and neg (−), emf per source type
         A[xRow][col] += 1;
         if (pNeg >= 0) A[pNeg][col] -= 1;
         A[col][xRow] += 1;
         if (pNeg >= 0) A[col][pNeg] -= 1;
-        z[col] += c.value;
+        z[col] += emfOf(c);
       }
     }
     return { A, z };
@@ -271,6 +311,7 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
       reason: 'The circuit could not be solved (it may contain a short across a source with no resistance).',
       pinNode,
       capVoltage: priorCap,
+      indCurrent: priorInd,
       warnings: ['Could not solve the circuit — check for a battery shorted directly across itself.'],
     };
   }
@@ -281,6 +322,7 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
 
   const results: Record<string, ElementResult> = {};
   const capVoltageOut: Record<string, number> = {};
+  const indCurrentOut: Record<string, number> = {};
   const warnings: string[] = [];
 
   for (const c of components) {
@@ -288,23 +330,63 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
       results[c.id] = { current: 0, voltage: 0, power: 0 };
       continue;
     }
-    if (c.type === 'resistor' || c.type === 'lamp' || c.type === 'switch') {
+    if (['resistor', 'lamp', 'switch', 'motor', 'buzzer', 'fuse', 'voltmeter', 'ammeter'].includes(c.type)) {
       const [pa, pb] = pinRefsByComp.get(c.id)!;
       const va = nodeVoltage[pinNode[pa]];
       const vb = nodeVoltage[pinNode[pb]];
       const v = va - vb;
-      let R: number;
-      if (c.type === 'switch') R = c.closed ? R_SWITCH_CLOSED : R_OPEN;
-      else R = Math.max(1e-6, c.value);
+      const R = c.type === 'switch' ? (c.closed ? R_SWITCH_CLOSED : R_OPEN)
+        : c.type === 'fuse' ? (c.blown ? R_OPEN : FUSE_R)
+        : c.type === 'voltmeter' ? VOLTMETER_R
+        : c.type === 'ammeter' ? AMMETER_R
+        : Math.max(1e-6, c.value);
       const i = v / R;
       const power = i * i * R;
       const res: ElementResult = { current: i, voltage: v, power };
       if (c.type === 'lamp') {
-        const rated = (c.value > 0 ? (12 * 12) / c.value : 1); // ~12 V rating
+        const rated = c.value > 0 ? (12 * 12) / c.value : 1; // ~12 V rating
         res.brightness = Math.max(0, Math.min(1, power / Math.max(0.05, rated)));
         res.lit = res.brightness > 0.03;
+      } else if (c.type === 'motor') {
+        res.lit = power > MOTOR_MIN_POWER;
+        res.brightness = Math.max(0, Math.min(1, power / 0.5));
+      } else if (c.type === 'buzzer') {
+        res.lit = power > BUZZER_MIN_POWER;
+        res.brightness = Math.max(0, Math.min(1, power / 0.5));
+      } else if (c.type === 'voltmeter') {
+        res.meter = v;
+      } else if (c.type === 'ammeter') {
+        res.meter = i;
+      } else if (c.type === 'fuse') {
+        if (c.blown) res.warning = 'Blown — reset the simulation to restore it.';
       }
       results[c.id] = res;
+      continue;
+    }
+    if (c.type === 'potentiometer') {
+      const va = nodeVoltage[pinNode[ref(c.id, 'a')]];
+      const vb = nodeVoltage[pinNode[ref(c.id, 'b')]];
+      const vw = nodeVoltage[pinNode[ref(c.id, 'wiper')]];
+      const R = Math.max(1e-6, c.value);
+      const i = (va - vb) / R;
+      results[c.id] = { current: i, voltage: va - vb, power: Math.abs(i * (va - vb)), meter: vw };
+      continue;
+    }
+    if (c.type === 'currentsource') {
+      const vp = nodeVoltage[pinNode[ref(c.id, 'pos')]];
+      const vn = nodeVoltage[pinNode[ref(c.id, 'neg')]];
+      const i = c.value * 1e-3;
+      results[c.id] = { current: i, voltage: vp - vn, power: Math.abs(i * (vp - vn)) };
+      continue;
+    }
+    if (c.type === 'inductor') {
+      const [pa, pb] = pinRefsByComp.get(c.id)!;
+      const vab = nodeVoltage[pinNode[pa]] - nodeVoltage[pinNode[pb]];
+      const L = Math.max(1e-9, c.value * 1e-3);
+      const iprev = priorInd[c.id] ?? 0;
+      const current = dt > 0 ? iprev + (dt / L) * vab : iprev;
+      indCurrentOut[c.id] = current;
+      results[c.id] = { current, voltage: vab, power: Math.abs(vab * current) };
       continue;
     }
     if (c.type === 'diode') {
@@ -355,14 +437,14 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
       results[c.id] = res;
       continue;
     }
-    if (c.type === 'battery') {
+    if (c.type === 'battery' || c.type === 'acsource') {
       const vp = nodeVoltage[pinNode[ref(c.id, 'pos')]];
       const vn = nodeVoltage[pinNode[ref(c.id, 'neg')]];
       const xNode = internalRow.get(c.id)!;
       const vx = x[xNode];
       const current = (vx - vp) / BATTERY_INTERNAL_R; // positive when discharging (current out of +)
       results[c.id] = { current, voltage: vp - vn, power: Math.abs(current * (vp - vn)) };
-      if (Math.abs(current) > 5) {
+      if (c.type === 'battery' && Math.abs(current) > 5) {
         warnings.push(`${c.id}: very large current (${current.toFixed(1)} A) — the battery is close to a short circuit.`);
       }
       continue;
@@ -371,10 +453,10 @@ export function solve(components: Component[], wires: Wire[], opts: SolveOpts = 
 
   // Open-circuit hint: a source is present but essentially no current flows.
   const anyLoad = components.some((c) => c.type === 'resistor' || c.type === 'led' || c.type === 'lamp');
-  const totalBatteryCurrent = batteries.reduce((s, b) => s + Math.abs(results[b.id]?.current ?? 0), 0);
-  if (batteries.length > 0 && anyLoad && totalBatteryCurrent < 1e-5) {
+  const totalBatteryCurrent = vsources.reduce((sum, b) => sum + Math.abs(results[b.id]?.current ?? 0), 0);
+  if (vsources.length > 0 && anyLoad && totalBatteryCurrent < 1e-5) {
     warnings.push('No current is flowing — the circuit is probably open (a wire, switch or connection is missing).');
   }
 
-  return { ok: true, nodeVoltage, pinNode, results, capVoltage: capVoltageOut, warnings };
+  return { ok: true, nodeVoltage, pinNode, results, capVoltage: capVoltageOut, indCurrent: indCurrentOut, warnings };
 }

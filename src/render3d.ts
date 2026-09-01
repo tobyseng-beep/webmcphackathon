@@ -1,4 +1,4 @@
-// three.js surface renderer for z = f(x,y). Orbiting with the mouse writes
+// three.js surface renderer for equations solved for x, y or z. Orbiting with the mouse writes
 // through store.setCamera, so `set_camera` and the user's drag are the same
 // operation -- the agent can always read back where the camera actually is.
 
@@ -67,36 +67,26 @@ interface WorldTransform {
   x: (value: number) => number;
   y: (value: number) => number;
   z: (value: number) => number;
-  scaleX: number;
-  scaleY: number;
-  scaleZ: number;
+  scale: number;
 }
 
 function worldTransform(view: Viewport): WorldTransform {
-  const xExtent = Math.max(
+  const maxExtent = Math.max(
     Math.abs(view.xmin),
     Math.abs(view.xmax),
-    Number.EPSILON,
-  );
-  const yExtent = Math.max(
     Math.abs(view.ymin),
     Math.abs(view.ymax),
-    Number.EPSILON,
-  );
-  const zExtent = Math.max(
     Math.abs(view.zmin),
     Math.abs(view.zmax),
     Number.EPSILON,
   );
-  const scaleX = SPAN / xExtent;
-  const scaleY = SPAN / yExtent;
-  const scaleZ = SPAN / zExtent;
+  const scale = SPAN / maxExtent;
 
   return {
-    x: (value) => value * scaleX,
-    y: (value) => value * scaleY,
-    z: (value) => value * scaleZ,
-    scaleX, scaleY, scaleZ,
+    x: (value) => value * scale,
+    y: (value) => value * scale,
+    z: (value) => value * scale,
+    scale,
   };
 }
 
@@ -154,32 +144,65 @@ function buildAxes(view: Viewport): void {
   axesViewportKey = viewportKey;
 }
 
+type Axis = 'x' | 'y' | 'z';
+
+interface SurfaceVertex {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface SurfaceSpec {
+  u: Axis;
+  v: Axis;
+  output: Axis;
+}
+
+function surfaceSpec(expr: Expression): SurfaceSpec | null {
+  if (expr.kind === 'explicit_z') return { u: 'x', v: 'y', output: 'z' };
+  if (expr.kind === 'explicit_y') return { u: 'x', v: 'z', output: 'y' };
+  if (expr.kind === 'explicit_x') return { u: 'y', v: 'z', output: 'x' };
+  return null;
+}
+
+function axisBounds(view: Viewport, axis: Axis): [number, number] {
+  if (axis === 'x') return [view.xmin, view.xmax];
+  if (axis === 'y') return [view.ymin, view.ymax];
+  return [view.zmin, view.zmax];
+}
+
 function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry {
-  const { xmin, xmax, ymin, ymax } = view;
   const world = worldTransform(view);
   const base = scope();
   const fn = expr.fn;
-  if (!fn) return new THREE.BufferGeometry();
+  const spec = surfaceSpec(expr);
+  if (!fn || !spec) return new THREE.BufferGeometry();
   const N = GRID;
-
-  interface SurfaceVertex {
-    x: number;
-    y: number;
-    z: number;
-  }
+  const [umin, umax] = axisBounds(view, spec.u);
+  const [vmin, vmax] = axisBounds(view, spec.v);
+  const [outputMin, outputMax] = axisBounds(view, spec.output);
 
   const samples: Array<SurfaceVertex | null> = new Array((N + 1) * (N + 1));
 
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
-      const x = xmin + (i / N) * (xmax - xmin);
-      const y = ymin + (j / N) * (ymax - ymin);
-      base.x = x; base.y = y;
+      const u = umin + (i / N) * (umax - umin);
+      const v = vmin + (j / N) * (vmax - vmin);
+      base[spec.u] = u;
+      base[spec.v] = v;
       let evaluated: unknown;
       try { evaluated = fn.evaluate(base); } catch { evaluated = NaN; }
-      const z = typeof evaluated === 'number' ? evaluated : Number(evaluated);
+      const output = typeof evaluated === 'number' ? evaluated : Number(evaluated);
       const k = j * (N + 1) + i;
-      samples[k] = Number.isFinite(z) ? { x, y, z } : null;
+      if (!Number.isFinite(output)) {
+        samples[k] = null;
+        continue;
+      }
+      const vertex: SurfaceVertex = { x: 0, y: 0, z: 0 };
+      vertex[spec.u] = u;
+      vertex[spec.v] = v;
+      vertex[spec.output] = output;
+      samples[k] = vertex;
     }
   }
 
@@ -189,16 +212,20 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
   const positions: number[] = [];
   const colors: number[] = [];
 
-  const interpolateAtZ = (a: SurfaceVertex, b: SurfaceVertex, z: number): SurfaceVertex => {
-    const t = (z - a.z) / (b.z - a.z);
+  const interpolateAtOutput = (
+    a: SurfaceVertex,
+    b: SurfaceVertex,
+    bound: number,
+  ): SurfaceVertex => {
+    const t = (bound - a[spec.output]) / (b[spec.output] - a[spec.output]);
     return {
       x: a.x + (b.x - a.x) * t,
       y: a.y + (b.y - a.y) * t,
-      z,
+      z: a.z + (b.z - a.z) * t,
     };
   };
 
-  const clipAtZ = (
+  const clipAtOutput = (
     polygon: SurfaceVertex[],
     bound: number,
     keepAbove: boolean,
@@ -206,12 +233,16 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
     if (polygon.length === 0) return polygon;
     const clipped: SurfaceVertex[] = [];
     let previous = polygon[polygon.length - 1];
-    let previousInside = keepAbove ? previous.z >= bound : previous.z <= bound;
+    let previousInside = keepAbove
+      ? previous[spec.output] >= bound
+      : previous[spec.output] <= bound;
 
     for (const current of polygon) {
-      const currentInside = keepAbove ? current.z >= bound : current.z <= bound;
+      const currentInside = keepAbove
+        ? current[spec.output] >= bound
+        : current[spec.output] <= bound;
       if (currentInside !== previousInside) {
-        clipped.push(interpolateAtZ(previous, current, bound));
+        clipped.push(interpolateAtOutput(previous, current, bound));
       }
       if (currentInside) clipped.push(current);
       previous = current;
@@ -233,8 +264,8 @@ function surfaceGeometry(expr: Expression, view: Viewport): THREE.BufferGeometry
     c: SurfaceVertex | null,
   ): void => {
     if (!a || !b || !c) return;
-    let polygon = clipAtZ([a, b, c], view.zmin, true);
-    polygon = clipAtZ(polygon, view.zmax, false);
+    let polygon = clipAtOutput([a, b, c], outputMin, true);
+    polygon = clipAtOutput(polygon, outputMax, false);
     for (let i = 1; i + 1 < polygon.length; i++) {
       appendVertex(polygon[0]);
       appendVertex(polygon[i]);
@@ -263,7 +294,12 @@ export function rebuild(): void {
   if (!ready) return;
   const state = getState();
   buildAxes(state.viewport);
-  const wanted = state.expressions.filter((e) => e.kind === 'explicit_z' && e.visible && !e.error);
+  const wanted = state.expressions.filter(
+    (e) =>
+      (e.kind === 'explicit_x' || e.kind === 'explicit_y' || e.kind === 'explicit_z') &&
+      e.visible &&
+      !e.error,
+  );
   const wantedIds = new Set(wanted.map((e) => e.id));
 
   for (const [id, mesh] of surfaces) {
@@ -390,9 +426,9 @@ function attachInteraction(): void {
     const stepY = niceStep(view.ymax - view.ymin, 10);
     const stepZ = niceStep(view.zmax - view.zmin, 10);
     showHover(e.clientX, e.clientY, [
-      { label: 'x', value: point.x / world.scaleX, majorStep: stepX },
-      { label: 'y', value: point.y / world.scaleY, majorStep: stepY },
-      { label: 'z', value: point.z / world.scaleZ, majorStep: stepZ },
+      { label: 'x', value: point.x / world.scale, majorStep: stepX },
+      { label: 'y', value: point.y / world.scale, majorStep: stepY },
+      { label: 'z', value: point.z / world.scale, majorStep: stepZ },
     ]);
   });
   el.addEventListener('pointerleave', () => hideHover());

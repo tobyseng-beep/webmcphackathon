@@ -108,7 +108,7 @@ the motion is the whole point.
 | Tool | What it does |
 |---|---|
 | `list_expressions` | Read the board: expressions, live slider values, viewport, mode |
-| `add_expression` | Plot `y=f(x)`, `x=g(y)`, `z=f(x,y)`, `r=f(θ)` or an implicit equation; returns parse errors |
+| `add_expression` | Plot 2D curves or 3D surfaces solved for any axis (`x=f(y,z)`, `y=f(x,z)`, `z=f(x,y)`); returns parse errors |
 | `update_expression` | Change a curve in place, keeping its id and colour |
 | `remove_expression` | Delete a curve |
 | `define_slider` | Create a parameter or change its range, step and value |

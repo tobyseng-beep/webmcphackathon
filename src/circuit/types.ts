@@ -9,7 +9,16 @@ export type ComponentType =
   | 'lamp'
   | 'switch'
   | 'capacitor'
+  | 'inductor'
   | 'diode'
+  | 'potentiometer'
+  | 'currentsource'
+  | 'acsource'
+  | 'fuse'
+  | 'voltmeter'
+  | 'ammeter'
+  | 'motor'
+  | 'buzzer'
   | 'ground';
 
 export type Rotation = 0 | 90 | 180 | 270;
@@ -25,6 +34,9 @@ export interface Component {
   value: number; // volts (battery) or ohms (resistor, lamp); ignored otherwise
   closed: boolean; // switch only
   color: LedColor; // led only
+  wiper: number; // potentiometer wiper position, 0..1
+  freq: number; // AC source frequency, Hz
+  blown: boolean; // fuse
   label: string | null;
 }
 
@@ -50,9 +62,10 @@ export interface ElementResult {
   current: number; // amps, signed along the component's own pin order
   voltage: number; // volts across (pin0 minus pin1)
   power: number; // watts dissipated (>= 0)
-  lit?: boolean; // led / lamp
+  lit?: boolean; // led / lamp / motor / buzzer active
   brightness?: number; // 0..1
-  warning?: string; // e.g. overcurrent, reverse-biased
+  meter?: number; // reading a voltmeter/ammeter displays
+  warning?: string; // e.g. overcurrent, reverse-biased, blown
 }
 
 export interface Solution {
@@ -63,6 +76,7 @@ export interface Solution {
   pinNode: Record<string, number>; // pin ref -> node id
   results: Record<string, ElementResult>; // component id -> result
   capVoltage: Record<string, number>; // capacitor id -> voltage across it after this solve
+  indCurrent: Record<string, number>; // inductor id -> current through it after this solve
   warnings: string[];
 }
 

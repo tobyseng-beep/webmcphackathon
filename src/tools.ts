@@ -42,7 +42,7 @@ const toolDefinitions = [
   {
     name: 'add_expression',
     description:
-      'Plot a new expression and render it immediately. Accepts plain math ("y = a*x^2 + b") or LaTeX ("y = \\\\frac{x}{2}"). Understands four forms: y = f(x), x = g(y), z = f(x,y) for 3D surfaces, r = f(theta) for polar, and implicit equations such as x^2 + y^2 = 9. Free variables automatically become sliders while x, y, z and the polar coordinate theta do not, so "y = a*sin(b*x)" creates sliders a and b in one call. A slider is removed when its parameter no longer appears in any expression. If the expression does not parse, this returns ok:false with the parser error -- read it, fix the syntax, and call again rather than reporting failure to the student.',
+      'Plot a new expression and render it immediately. Accepts plain math ("y = a*x^2 + b") or LaTeX ("y = \\\\frac{x}{2}"). In 2D it supports y = f(x), x = g(y), polar and implicit equations. In 3D it supports surfaces oriented as z = f(x,y), y = f(x,z), or x = f(y,z); a bare expression is treated as z = expression. Free variables automatically become sliders while x, y, z and the polar coordinate theta do not, so "y = a*sin(b*x)" creates sliders a and b in one call. A slider is removed when its parameter no longer appears in any expression. If the expression does not parse, this returns ok:false with the parser error -- read it, fix the syntax, and call again rather than reporting failure to the student.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -263,7 +263,7 @@ const toolDefinitions = [
   {
     name: 'set_mode',
     description:
-      'Switch the board between the 2D grapher and the 3D surface plotter. Expressions of the form z = f(x,y) only render in 3D; y = f(x) curves only render in 2D. Switching does not delete anything, so you can move back and forth. Call this before plotting a surface, otherwise the student sees a blank 2D board.',
+      'Switch the board between the 2D grapher and the 3D surface plotter. In 3D, equations beginning with x, y, or z render as surfaces solved for that axis. Switching does not delete anything, so you can move back and forth. Call this before plotting a surface, otherwise the student sees a blank 2D board.',
     inputSchema: {
       type: 'object',
       properties: { mode: { type: 'string', enum: ['2d', '3d'] } },
