@@ -87,7 +87,7 @@ export const PRESETS: Record<string, Preset> = {
   saddle: {
     title: 'Saddle surface',
     mode: '3d',
-    viewport: { xmin: -4, xmax: 4, ymin: -4, ymax: 4, zmin: -16, zmax: 16 },
+    viewport: { xmin: -4, xmax: 4, ymin: -4, ymax: 4, zmin: -4, zmax: 4 },
     camera: { theta: 40, phi: 62, distance: 36 },
     sliders: [],
     expressions: ['z = x^2 - y^2'],
@@ -96,7 +96,7 @@ export const PRESETS: Record<string, Preset> = {
   gaussian_hill: {
     title: 'Gaussian hill',
     mode: '3d',
-    viewport: { xmin: -4, xmax: 4, ymin: -4, ymax: 4, zmin: -1, zmax: 4 },
+    viewport: { xmin: -4, xmax: 4, ymin: -4, ymax: 4, zmin: -4, zmax: 4 },
     camera: { theta: 35, phi: 62, distance: 34 },
     sliders: [
       { name: 'A', min: 0, max: 4, step: 0.01, value: 3 },
@@ -108,7 +108,7 @@ export const PRESETS: Record<string, Preset> = {
   ripple: {
     title: 'Radial ripple',
     mode: '3d',
-    viewport: { xmin: -8, xmax: 8, ymin: -8, ymax: 8, zmin: -2, zmax: 2 },
+    viewport: { xmin: -8, xmax: 8, ymin: -8, ymax: 8, zmin: -8, zmax: 8 },
     camera: { theta: 30, phi: 58, distance: 36 },
     sliders: [{ name: 'k', min: 0.2, max: 4, step: 0.01, value: 1.4 }],
     expressions: ['z = sin(k*sqrt(x^2 + y^2))/(1 + sqrt(x^2 + y^2))'],
