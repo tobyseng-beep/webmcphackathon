@@ -19,6 +19,12 @@ export interface HoverAxis {
   value: number;
   /** Spacing of the major grid line for this axis; minor lines are 1/5 of this. */
   majorStep: number;
+  /**
+   * Pre-resolved value that overrides ordinary grid snapping (e.g. the caller
+   * already snapped this axis onto a plotted curve). Ignored when snapping is
+   * off, so the readout still shows the raw cursor position.
+   */
+  resolvedValue?: number;
 }
 
 /** `pageX`/`pageY` are viewport coordinates (e.g. from a PointerEvent). */
@@ -26,10 +32,12 @@ export function showHover(pageX: number, pageY: number, axes: HoverAxis[]): void
   if (!box || !stageEl) return;
   const snapping = getState().snapping;
 
-  const parts = axes.map(({ label, value, majorStep }) => {
-    const result = snapping ? snapToMinorGrid(value, majorStep) : { value, snapped: false };
+  const parts = axes.map(({ label, value, majorStep, resolvedValue }) => {
+    const out = !snapping ? value
+      : resolvedValue !== undefined ? resolvedValue
+      : snapToMinorGrid(value, majorStep).value;
     const decimals = decimalsForStep(majorStep) + 1;
-    return `${label}: ${result.value.toFixed(decimals)}`;
+    return `${label}: ${out.toFixed(decimals)}`;
   });
   box.textContent = parts.join('  ');
   box.hidden = false;

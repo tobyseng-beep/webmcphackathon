@@ -3,7 +3,7 @@
 // store.setViewport so the agent sees the same viewport the student does.
 
 import { getState, scope, setViewport } from './store';
-import { niceStep } from './gridmath';
+import { niceStep, snapToMinorGrid } from './gridmath';
 import { showHover, hideHover } from './hover';
 import type { Expression } from './types';
 
@@ -341,6 +341,60 @@ export function draw(): void {
   ctx.restore();
 }
 
+interface CurveSnapResult {
+  resolvedX?: number;
+  resolvedY?: number;
+}
+
+/**
+ * Snap the hover readout onto a plotted y=f(x) or x=g(y) curve, not just the
+ * grid. The capture radius is double a normal grid snap ("double the
+ * strength"), and the case that matters most -- the curve crossing exactly
+ * where a vertical and horizontal grid line meet -- locks both coordinates to
+ * that grid intersection instead of the raw curve value.
+ */
+function curveSnap(rawX: number, rawY: number, stepX: number, stepY: number): CurveSnapResult {
+  const thresholdX = (stepX / 5 / 4) * 2;
+  const thresholdY = (stepY / 5 / 4) * 2;
+
+  // The x (or y) the curve gets evaluated at should be whatever will actually
+  // be displayed for that axis, so the shown pair always satisfies y=f(x) --
+  // otherwise a grid-snapped x next to a raw curve-y would not really be a
+  // point on the curve.
+  const gridX = snapToMinorGrid(rawX, stepX);
+  const gridY = snapToMinorGrid(rawY, stepY);
+  const displayX = gridX.snapped ? gridX.value : rawX;
+  const displayY = gridY.snapped ? gridY.value : rawY;
+
+  let best: { axis: 'y' | 'x'; x: number; y: number; dist: number } | null = null;
+  for (const expr of getState().expressions) {
+    if (!expr.visible || expr.error || !expr.fn) continue;
+    if (expr.kind === 'explicit_y') {
+      const y = evaluator(expr, 'x')(displayX);
+      const dist = Math.abs(rawY - y);
+      if (Number.isFinite(y) && dist <= thresholdY && (!best || dist < best.dist)) {
+        best = { axis: 'y', x: displayX, y, dist };
+      }
+    } else if (expr.kind === 'explicit_x') {
+      const x = evaluator(expr, 'y')(displayY);
+      const dist = Math.abs(rawX - x);
+      if (Number.isFinite(x) && dist <= thresholdX && (!best || dist < best.dist)) {
+        best = { axis: 'x', x, y: displayY, dist };
+      }
+    }
+  }
+  if (!best) return {};
+
+  if (best.axis === 'y') {
+    const gy = snapToMinorGrid(best.y, stepY);
+    if (gridX.snapped && gy.snapped) return { resolvedX: gridX.value, resolvedY: gy.value };
+    return { resolvedX: best.x, resolvedY: best.y };
+  }
+  const gx = snapToMinorGrid(best.x, stepX);
+  if (gx.snapped && gridY.snapped) return { resolvedX: gx.value, resolvedY: gridY.value };
+  return { resolvedX: best.x, resolvedY: best.y };
+}
+
 function attachInteraction(): void {
   let dragging = false;
   let last: Point = [0, 0];
@@ -365,9 +419,11 @@ function attachInteraction(): void {
     const t = transforms();
     const stepX = niceStep(t.xmax - t.xmin, Math.max(4, t.W / 90));
     const stepY = niceStep(t.ymax - t.ymin, Math.max(4, t.H / 70));
+    const rawX = t.toX(e.offsetX), rawY = t.toY(e.offsetY);
+    const curve = getState().snapping ? curveSnap(rawX, rawY, stepX, stepY) : {};
     showHover(e.clientX, e.clientY, [
-      { label: 'x', value: t.toX(e.offsetX), majorStep: stepX },
-      { label: 'y', value: t.toY(e.offsetY), majorStep: stepY },
+      { label: 'x', value: rawX, majorStep: stepX, resolvedValue: curve.resolvedX },
+      { label: 'y', value: rawY, majorStep: stepY, resolvedValue: curve.resolvedY },
     ]);
   });
   canvas.addEventListener('pointerleave', () => hideHover());
