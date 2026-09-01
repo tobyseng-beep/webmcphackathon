@@ -181,6 +181,66 @@ app into `dist/` with a relative asset base, so it works at the existing
 `probe.html` is a one-tool diagnostic page for checking whether a given browser exposes
 WebMCP at all.
 
+Overall project structure
+
+```text
+ai-engineering-workspace/
+│
+├── apps/
+│   ├── web/                         TypeScript
+│   │   ├── src/
+│   │   │   ├── app/
+│   │   │   ├── components/
+│   │   │   ├── editor/
+│   │   │   ├── graphing/
+│   │   │   ├── circuit/
+│   │   │   ├── pcb/
+│   │   │   ├── scene3d/
+│   │   │   ├── simulation/
+│   │   │   ├── ai/
+│   │   │   └── state/
+│   │   └── package.json
+│   │
+│   └── api/                         TypeScript
+│       └── src/
+│
+├── packages/
+│   ├── core/                        TypeScript
+│   ├── math/                        TypeScript
+│   ├── graphing/                    TypeScript
+│   ├── circuit-model/               TypeScript
+│   ├── pcb-model/                   TypeScript
+│   ├── scene-model/                 TypeScript
+│   ├── agent-tools/                 TypeScript
+│   └── shared-types/                TypeScript
+│
+├── engines/
+│   ├── math/                        Python
+│   ├── circuit/                     Rust
+│   ├── pcb/                         Rust
+│   ├── geometry/                    Rust
+│   └── simulation/                  Rust/C++
+│
+├── wasm/
+│   ├── circuit/
+│   ├── pcb/
+│   ├── geometry/
+│   └── simulation/
+│
+├── services/
+│   ├── ai/                          Python
+│   ├── simulation/                  Python/Rust
+│   └── workers/                     Python
+│
+├── mcp/
+│   ├── tools/                       TypeScript
+│   ├── schemas/                     TypeScript
+│   └── webmcp/                      TypeScript
+│
+├── tests/
+│
+└── docs/
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
