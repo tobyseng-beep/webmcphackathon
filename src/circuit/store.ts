@@ -172,7 +172,7 @@ export function needsTransient(): boolean {
 // One solve step. dt === 0 takes an instantaneous snapshot; dt > 0 advances any
 // reactive parts one transient step. A blown fuse is detected here: if a fuse
 // exceeds its rating it opens and the circuit is re-solved once.
-function step(dt: number): Solution {
+function solveStep(dt: number): Solution {
   let solution = solve(state.components, state.wires, { dt, capVoltage, indCurrent, time: simTime });
   if (solution.ok) {
     let anyBlew = false;
@@ -188,6 +188,11 @@ function step(dt: number): Solution {
     if (dt > 0) sampleScope(solution);
   }
   state.solution = solution;
+  return solution;
+}
+
+function step(dt: number): Solution {
+  const solution = solveStep(dt);
   notify('solution');
   return solution;
 }
@@ -259,14 +264,25 @@ export function resolve(): Solution {
   return step(0);
 }
 
-// Called by the render loop to move time forward while a reactive part is present.
-export function advance(dt: number): void {
+// Called by the render loop with the real time since the last frame. Advances
+// the simulation in small fixed sub-steps so the transient tracks wall-clock
+// time at any frame rate (a low or throttled frame rate no longer makes it
+// crawl), while a per-frame cap avoids a huge jump after the tab was paused.
+const SIM_SUBSTEP = 1 / 120; // seconds of sim per integration step
+const SIM_MAX_CATCHUP = 0.25; // max seconds of sim advanced in a single frame
+export function advance(dtReal: number): void {
   if (!state.running) return;
   const scopeActive = state.scope.visible && state.scope.traces.length > 0;
   if (!needsTransient() && !scopeActive) return;
-  const clamped = Math.min(0.05, Math.max(0, dt));
-  simTime += clamped;
-  step(clamped);
+  let remaining = Math.min(SIM_MAX_CATCHUP, Math.max(0, dtReal));
+  if (remaining <= 0) return;
+  while (remaining > 1e-6) {
+    const h = Math.min(SIM_SUBSTEP, remaining);
+    simTime += h;
+    solveStep(h);
+    remaining -= h;
+  }
+  notify('solution');
 }
 
 // Reset the transient: discharge every capacitor and re-solve from t = 0.
