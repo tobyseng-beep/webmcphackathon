@@ -4,12 +4,13 @@
 
 import * as chem from './store';
 import { atomInfo } from './atom';
+import { analyzeStructure, type AtomBondingAnalysis } from './analysis';
 import { ELEMENTS, elementByZ, elementBySymbol, MAX_Z } from './elements';
 import { suggestBondKind } from './render';
 import { loadPreset, presetNames, PRESETS } from './presets';
 import type { Atom, BondKind, WebMcpTool } from './types';
 
-function describeAtom(a: Atom): Record<string, unknown> {
+function describeAtom(a: Atom, bonding?: AtomBondingAnalysis): Record<string, unknown> {
   const info = atomInfo(a);
   return {
     id: a.id,
@@ -22,16 +23,25 @@ function describeAtom(a: Atom): Record<string, unknown> {
     mass_number: info.massNumber,
     shells: info.shells,
     valence: info.valence,
+    nonbonding_electrons: bonding?.nonbondingElectrons ?? info.valence,
+    bonding_electrons: bonding?.bondingElectrons ?? 0,
+    shell_electrons: bonding?.shellElectrons ?? info.valence,
+    shell_target: bonding?.shellTarget ?? (a.protons <= 2 ? 2 : 8),
+    formal_charge: bonding?.formalCharge ?? info.charge,
+    valid_structure: bonding?.valid ?? true,
     position: { x: a.x, y: a.y },
   };
 }
 
 function summary(): Record<string, unknown> {
   const s = chem.getState();
+  const analysis = analyzeStructure(s);
   return {
-    atoms: s.atoms.map(describeAtom),
+    atoms: s.atoms.map((atom) => describeAtom(atom, analysis.atoms.get(atom.id))),
     bonds: s.bonds.map((b) => ({ id: b.id, a: b.a, b: b.b, kind: b.kind, order: b.order })),
     molecules: chem.molecules().map((m) => ({ formula: m.formula, atoms: m.atomIds, charge: m.charge })),
+    structure_valid: analysis.valid,
+    structure_warnings: analysis.warnings,
   };
 }
 
@@ -51,7 +61,7 @@ const toolDefinitions = [
   {
     name: 'list_atoms',
     description:
-      'Read the whole board: every atom with its element, proton/neutron/electron counts, charge, mass number, electron shells and valence; every bond; and the molecules present with their chemical formulas. Call this first to orient, and after any change you did not make. The ids returned here are what the other tools expect.',
+      'Read the whole board: every atom with its element, particle counts, valence, bond-aware shell count and formal charge; every bond; molecular formulas; and any invalid-structure warnings. Call this first to orient, and after any change you did not make. The ids returned here are what the other tools expect.',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => ({ ok: true, ...summary() }),
   },

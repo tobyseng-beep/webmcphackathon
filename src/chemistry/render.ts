@@ -6,6 +6,7 @@
 import type { Atom, Bond, BondKind } from './types';
 import * as chem from './store';
 import { atomInfo, shells } from './atom';
+import { analyzeStructure, type AtomBondingAnalysis } from './analysis';
 import { elementByZ, CATEGORY_COLOR } from './elements';
 
 let canvas: HTMLCanvasElement;
@@ -18,6 +19,7 @@ const COLORS = {
   proton: '#ef4444',
   neutron: '#94a3b8',
   electron: '#2d70b3',
+  bondElectron: '#7c3aed',
   ring: '#cbd5e1',
   bond: '#334155',
   ionic: '#b45309',
@@ -159,13 +161,14 @@ function drawNucleus(atom: Atom, center: Vec2, scale: number): void {
   }
 }
 
-function drawAtom(atom: Atom, selected: boolean): void {
+function drawAtom(atom: Atom, selected: boolean, bonding: AtomBondingAnalysis | undefined): void {
   const { scale } = chem.getState().view;
   const center = toScreen(atom.x, atom.y);
   const nR = nucleusRadius(atom) * scale;
   const shellCounts = shells(atom.electrons);
 
-  // shell rings + electrons (electrons drift slowly around their shell)
+  // Bond electrons are drawn separately between atoms. Every electron that
+  // remains nonbonding stays on its atom's outer ring and continues orbiting.
   const nShells = shellCounts.length;
   shellCounts.forEach((count, i) => {
     const ringR = (nucleusRadius(atom) + 0.35 + (i + 1) * SHELL_GAP) * scale;
@@ -174,11 +177,13 @@ function drawAtom(atom: Atom, selected: boolean): void {
     ctx.beginPath();
     ctx.arc(center.x, center.y, ringR, 0, Math.PI * 2);
     ctx.stroke();
+    const isBondedOuterShell = i === nShells - 1 && (bonding?.bondOrder ?? 0) > 0;
+    const visibleCount = isBondedOuterShell ? bonding!.nonbondingElectrons : count;
     const start = (i * 0.6) + Math.PI / 2;
-    const spin = clock * (0.32 / (i + 1)) * (i % 2 === 0 ? 1 : -1); // inner shells faster, alternating sense
+    const spin = clock * (0.32 / (i + 1)) * (i % 2 === 0 ? 1 : -1);
     const eR = Math.max(2.5, ELECTRON_DOT * scale);
-    for (let j = 0; j < count; j++) {
-      const ang = start + spin + (j / count) * Math.PI * 2;
+    for (let j = 0; j < visibleCount; j++) {
+      const ang = start + spin + (j / visibleCount) * Math.PI * 2;
       const ex = center.x + Math.cos(ang) * ringR;
       const ey = center.y + Math.sin(ang) * ringR;
       drawSphere(ex, ey, eR, COLORS.electron, eR > 3);
@@ -270,28 +275,55 @@ function roundRect(x: number, y: number, w: number, h: number, r: number): void 
 
 // ---- bonds ----
 
-function drawBond(bond: Bond, selected: boolean): void {
-  const a = chem.atomById(bond.a), b = chem.atomById(bond.b);
-  if (!a || !b) return;
+interface BondGeometry {
+  ux: number;
+  uy: number;
+  lanes: { start: Vec2; end: Vec2 }[];
+}
+
+function bondGeometry(bond: Bond, a: Atom, b: Atom): BondGeometry {
   const { scale } = chem.getState().view;
   const ca = toScreen(a.x, a.y), cb = toScreen(b.x, b.y);
   const dx = cb.x - ca.x, dy = cb.y - ca.y;
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;
-  const ra = atomRadius(a) * scale, rb = atomRadius(b) * scale;
-  const start = { x: ca.x + ux * ra, y: ca.y + uy * ra };
-  const end = { x: cb.x - ux * rb, y: cb.y - uy * rb };
   const perp = { x: -uy, y: ux };
+  const ra = atomRadius(a) * scale, rb = atomRadius(b) * scale;
+  const count = bond.kind === 'covalent' ? bond.order : 1;
+  const electronR = Math.max(2.5, ELECTRON_DOT * scale);
+  const laneGap = Math.max(8, electronR * 2.25);
+  const lanes = Array.from({ length: count }, (_, i) => {
+    const offset = (i - (count - 1) / 2) * laneGap;
+    // Intersect each bond lane with both outer-shell circles. This keeps double
+    // bond lanes attached to the rings instead of floating beside them.
+    const reachA = Math.sqrt(Math.max(0, ra * ra - offset * offset));
+    const reachB = Math.sqrt(Math.max(0, rb * rb - offset * offset));
+    return {
+      start: { x: ca.x + ux * reachA + perp.x * offset, y: ca.y + uy * reachA + perp.y * offset },
+      end: { x: cb.x - ux * reachB + perp.x * offset, y: cb.y - uy * reachB + perp.y * offset },
+    };
+  });
+  return { ux, uy, lanes };
+}
+
+function drawBond(bond: Bond, selected: boolean): void {
+  const a = chem.atomById(bond.a), b = chem.atomById(bond.b);
+  if (!a || !b) return;
+  const geometry = bondGeometry(bond, a, b);
+  const { ux, uy } = geometry;
 
   ctx.lineCap = 'round';
   // soft shadow under the bond for a little lift
   ctx.save();
   ctx.strokeStyle = 'rgba(16,24,40,0.10)';
   ctx.lineWidth = bond.kind === 'ionic' ? 3.5 : (2.4 + (bond.order - 1) * 4);
-  ctx.beginPath(); ctx.moveTo(start.x, start.y + 1.5); ctx.lineTo(end.x, end.y + 1.5); ctx.stroke();
+  for (const lane of geometry.lanes) {
+    ctx.beginPath(); ctx.moveTo(lane.start.x, lane.start.y + 1.5); ctx.lineTo(lane.end.x, lane.end.y + 1.5); ctx.stroke();
+  }
   ctx.restore();
 
   if (bond.kind === 'ionic') {
+    const { start, end } = geometry.lanes[0];
     ctx.strokeStyle = selected ? COLORS.select : COLORS.ionic;
     ctx.lineWidth = selected ? 3 : 2.2;
     ctx.setLineDash([6, 5]);
@@ -306,15 +338,27 @@ function drawBond(bond: Bond, selected: boolean): void {
   } else {
     ctx.strokeStyle = selected ? COLORS.select : COLORS.bond;
     ctx.lineWidth = selected ? 3 : 2.4;
-    const gap = 4;
-    const n = bond.order;
-    for (let i = 0; i < n; i++) {
-      const off = (i - (n - 1) / 2) * gap;
+    for (const { start, end } of geometry.lanes) {
       ctx.beginPath();
-      ctx.moveTo(start.x + perp.x * off, start.y + perp.y * off);
-      ctx.lineTo(end.x + perp.x * off, end.y + perp.y * off);
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
       ctx.stroke();
     }
+  }
+}
+
+function drawBondElectrons(bond: Bond): void {
+  if (bond.kind !== 'covalent') return;
+  const a = chem.atomById(bond.a), b = chem.atomById(bond.b);
+  if (!a || !b) return;
+  const { scale } = chem.getState().view;
+  const electronR = Math.max(2.5, ELECTRON_DOT * scale);
+  const geometry = bondGeometry(bond, a, b);
+  for (const { start, end } of geometry.lanes) {
+    const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const halfGap = Math.min(electronR * 1.2, Math.max(electronR, Math.hypot(end.x - start.x, end.y - start.y) / 4));
+    drawSphere(mid.x - geometry.ux * halfGap, mid.y - geometry.uy * halfGap, electronR, COLORS.bondElectron, electronR > 3);
+    drawSphere(mid.x + geometry.ux * halfGap, mid.y + geometry.uy * halfGap, electronR, COLORS.bondElectron, electronR > 3);
   }
 }
 
@@ -355,8 +399,10 @@ function draw(): void {
   drawGrid();
 
   const state = chem.getState();
+  const analysis = analyzeStructure(state);
   for (const bond of state.bonds) drawBond(bond, bond.id === state.selectedBondId);
-  for (const atom of state.atoms) drawAtom(atom, atom.id === state.selectedId);
+  for (const atom of state.atoms) drawAtom(atom, atom.id === state.selectedId, analysis.atoms.get(atom.id));
+  for (const bond of state.bonds) drawBondElectrons(bond);
 
   // bond rubber-band
   if (bondMode && bondFrom) {

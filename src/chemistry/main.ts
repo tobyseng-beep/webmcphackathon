@@ -5,7 +5,8 @@ import * as chem from './store';
 import { TOOLS, registerTools } from './tools';
 import { PRESETS } from './presets';
 import { ELEMENTS, CATEGORY_COLOR } from './elements';
-import { atomInfo, octetNeed } from './atom';
+import { atomInfo } from './atom';
+import { analyzeStructure } from './analysis';
 import { initChemRender, clientToGrid, setBondMode, isBondMode, fitView } from './render';
 import { mustQuery } from '../dom';
 import type { Atom, Bond, BondKind } from './types';
@@ -18,7 +19,9 @@ const periodicEl = mustQuery<HTMLDivElement>('#periodic');
 const inspectorPanel = mustQuery<HTMLDivElement>('#inspector-panel');
 const emptyHint = mustQuery<HTMLDivElement>('#empty-hint');
 const formulaBar = mustQuery<HTMLDivElement>('#formula-bar');
+const structureWarning = mustQuery<HTMLDivElement>('#structure-warning');
 const statusBar = mustQuery<HTMLDivElement>('#status-bar');
+const stage = mustQuery<HTMLElement>('.stage');
 const undoBtn = mustQuery<HTMLButtonElement>('#undo-btn');
 const redoBtn = mustQuery<HTMLButtonElement>('#redo-btn');
 const bondBtn = mustQuery<HTMLButtonElement>('#bond-btn');
@@ -153,6 +156,7 @@ function stepper(label: string, dotColor: string, value: number, onChange: (v: n
 function buildAtomInspector(atom: Atom): void {
   inspectorPanel.innerHTML = '';
   const info = atomInfo(atom);
+  const bonding = analyzeStructure(chem.getState()).atoms.get(atom.id);
 
   const title = document.createElement('div');
   title.className = 'insp-title';
@@ -171,11 +175,22 @@ function buildAtomInspector(atom: Atom): void {
   const reading = document.createElement('div');
   reading.className = 'insp-reading';
   const chargeText = info.charge === 0 ? 'neutral' : `${info.chargeLabel} ion`;
-  const need = octetNeed(atom.electrons);
+  const formal = bonding?.formalCharge ?? info.charge;
+  const shellElectrons = bonding?.shellElectrons ?? info.valence;
+  const shellTarget = bonding?.shellTarget ?? (atom.protons <= 2 ? 2 : 8);
+  const shellName = shellTarget === 2 ? 'Duet' : 'Octet';
+  const shellStatus = shellElectrons === shellTarget
+    ? 'complete ✓'
+    : shellElectrons < shellTarget
+      ? `${shellTarget - shellElectrons} short`
+      : `${shellElectrons - shellTarget} over`;
   reading.innerHTML =
     `<span class="k">Charge:</span> ${info.charge > 0 ? '+' : ''}${info.charge} (${chargeText})<br>` +
     `<span class="k">Valence electrons:</span> ${info.valence}<br>` +
-    `<span class="k">To full octet:</span> ${need === 0 ? 'complete ✓' : `${need} more`}`;
+    `<span class="k">Nonbonding electrons:</span> ${bonding?.nonbondingElectrons ?? info.valence}<br>` +
+    `<span class="k">Bond order total:</span> ${bonding?.bondOrder ?? 0}<br>` +
+    `<span class="k">${shellName}:</span> ${shellElectrons}/${shellTarget} (${shellStatus})<br>` +
+    `<span class="k">Formal charge:</span> ${formal > 0 ? '+' : ''}${formal}`;
   inspectorPanel.append(reading);
 
   const actions = document.createElement('div');
@@ -250,6 +265,7 @@ function formulaHtml(formula: string, charge: number): string {
 }
 function updateChrome(): void {
   const s = chem.getState();
+  const analysis = analyzeStructure(s);
   emptyHint.hidden = s.atoms.length > 0;
   undoBtn.disabled = !s.canUndo;
   redoBtn.disabled = !s.canRedo;
@@ -261,6 +277,14 @@ function updateChrome(): void {
     formulaBar.innerHTML = named.map((m) => `<span class="formula-chip">${formulaHtml(m.formula, m.charge)}</span>`).join('');
   } else {
     formulaBar.hidden = true;
+  }
+
+  structureWarning.hidden = analysis.valid;
+  stage.classList.toggle('has-structure-warning', !analysis.valid);
+  if (!analysis.valid) {
+    const shown = analysis.warnings.slice(0, 2);
+    const extra = analysis.warnings.length - shown.length;
+    structureWarning.textContent = `⚠ Invalid structure: ${shown.join(' ')}${extra > 0 ? ` (+${extra} more)` : ''}`;
   }
 
   if (s.message) { statusBar.hidden = false; statusBar.textContent = s.message; }

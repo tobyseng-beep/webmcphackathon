@@ -105,6 +105,14 @@
   background: rgba(255,255,255,.9); border: 1px solid var(--line); border-radius: 999px;
   padding: .35rem .8rem; box-shadow: 0 4px 14px rgba(16,24,40,.08); max-width: 90%;
 }
+.structure-warning {
+  position: absolute; z-index: 3; top: .75rem; left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: min(680px, 90%);
+  background: rgba(255,247,237,.96); border: 1px solid #fdba74; color: #9a3412;
+  border-radius: 9px; padding: .55rem .85rem; box-shadow: 0 4px 14px rgba(124,45,18,.12);
+  font-size: .8rem; font-weight: 600; line-height: 1.4; text-align: center;
+}
+.stage.has-structure-warning .formula-bar { top: 4.25rem; }
 .formula-chip { font-size: .9rem; font-weight: 700; color: var(--ink); }
 .formula-chip sub { font-size: .7em; }
 .formula-chip .chg { color: #7c3aed; font-size: .75em; vertical-align: super; }
@@ -127,7 +135,7 @@
 .pt-cell:active { transform: scale(1.05); }
 
 /* overlays fade/slide in */
-.formula-bar, .status-bar { animation: chem-rise .22s ease-out; }
+.formula-bar, .status-bar, .structure-warning { animation: chem-rise .22s ease-out; }
 @keyframes chem-rise { from { opacity: 0; transform: translateX(-50%) translateY(6px); } }
 .formula-chip { letter-spacing: .01em; }
 
