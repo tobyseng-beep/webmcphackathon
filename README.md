@@ -24,6 +24,8 @@ declares its tools, and whatever agent the student already uses can drive them.
 
 ## Try it
 
+> Testing the WebMCP tools (self-test, Chrome flag, ChatGPT desktop, Tool inspector): see [TESTING.md](TESTING.md).
+
 The live URL opens a menu of learning tools. **2D** and **3D** open the grapher
 (`graph.html?mode=2d` / `?mode=3d`); **Circuits** and **Physics** are marked coming soon
 because they are not built yet, and say which 2D lesson covers the topic today. The

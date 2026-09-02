@@ -10,6 +10,7 @@ import { analyzeStructure } from './analysis';
 import { initChemRender, clientToGrid, setBondMode, isBondMode, fitView } from './render';
 import { mustQuery } from '../dom';
 import type { Atom, Bond, BondKind } from './types';
+import { wireWebmcpTester } from '../webmcp-selftest';
 
 const canvas = mustQuery<HTMLCanvasElement>('#chem-canvas');
 const logEl = mustQuery<HTMLDivElement>('#log');
@@ -356,6 +357,7 @@ if (status.available) {
   badgeText.textContent = 'WebMCP unavailable';
   badge.title = 'No document.modelContext on this page. Open in the ChatGPT desktop in-app browser, or Chrome 149+ with chrome://flags/#enable-webmcp-testing. The tool inspector on the right still works.';
 }
+wireWebmcpTester(badge, badgeText, 'list_atoms', status.registered);
 
 /* ---------- first paint ---------- */
 

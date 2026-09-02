@@ -10,6 +10,7 @@ import { initRender3D, rebuild as rebuild3D, resize3D } from './render3d';
 import { initHoverBox } from './hover';
 import { renderAll, focusLastExpression } from './ui';
 import { mustQuery } from './dom';
+import { wireWebmcpTester } from './webmcp-selftest';
 
 const canvas2d = mustQuery<HTMLCanvasElement>('#canvas2d');
 const stage3d = mustQuery<HTMLDivElement>('#stage3d');
@@ -226,6 +227,7 @@ if (status.available) {
     'or Chrome 149+ with chrome://flags/#enable-webmcp-testing enabled. ' +
     'The tool inspector on the right still works.';
 }
+wireWebmcpTester(badge, badgeText, 'list_expressions', status.registered);
 
 /* ---------- first paint ---------- */
 

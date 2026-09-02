@@ -11,6 +11,7 @@ import { initCircuitRender, clientToGrid } from './render';
 import { initScope, resizeScope } from './scope';
 import { mustQuery } from '../dom';
 import type { Component, ComponentType, LedColor } from './types';
+import { wireWebmcpTester } from '../webmcp-selftest';
 
 const canvas = mustQuery<HTMLCanvasElement>('#circuit-canvas');
 const logEl = mustQuery<HTMLDivElement>('#log');
@@ -489,6 +490,7 @@ if (status.available) {
     'or Chrome 149+ with chrome://flags/#enable-webmcp-testing enabled. ' +
     'The tool inspector on the right still works.';
 }
+wireWebmcpTester(badge, badgeText, 'list_components', status.registered);
 
 /* ---------- first paint ---------- */
 
