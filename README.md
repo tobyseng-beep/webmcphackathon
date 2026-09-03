@@ -124,6 +124,53 @@ the motion is the whole point.
 | `set_mode` | Switch between the 2D grapher and 3D surface plotter |
 | `load_preset` | Load a lesson: expressions, ranges, camera and a teaching note |
 
+### Snapping and the cursor
+
+With **Snap to curve** on, the pointer does not merely report a nearby curve — it
+rides it. The native cursor is hidden and a stand-in pointer is drawn at the snapped
+point, so there is one pointer on screen sitting on the line rather than a cursor in one
+place and a marker in another. It takes a deliberate pull (25 px, against a 17 px
+capture) to come off a curve, so the pointer stays put while sliding along it without
+ever being trapped.
+
+Every radius is deliberately tight. Snapping should feel like the cursor settling onto a
+line it was already near; a grabby snap is something the student works around rather than
+uses.
+
+Magnetism comes in three strengths, because not every point on a curve is equally worth
+landing on ([`src/snap.ts`](src/snap.ts)):
+
+| Tier | What it is | Reach |
+|---|---|---|
+| `curve` | anywhere along a plotted curve | 17 px perpendicular |
+| `curve-grid` | where a curve crosses one of the graph's own grid lines | 6 px radial |
+| `curve-curve` | **where two plotted curves cross each other** | **10 px radial** |
+
+A crossing of two of the student's own curves is the most meaningful point on the board,
+so it pulls from nearly twice as far as a grid crossing and outranks it when both are in
+range.
+
+Those crossings mark themselves, too: up to three of them wear the same circle the cursor
+does when it snaps — hollow rather than filled, so a place you *could* land on never
+looks like the live pointer. Above three the board is too busy and they all stand down. A
+marker also stands down when the pointer comes within 36 px of its point, so the cursor's
+own circle and readout take over rather than stacking two circles on one spot.
+
+Crossings are found by sampling for sign changes and bisecting, over pairs of `y=f(x)`
+and `x=g(y)` curves. Two cases need catching beyond a plain sign change, because neither
+one changes sign:
+
+- **A root landing exactly on a sample.** The common case for the tidy numbers a lesson is
+  built from — `y = 5` meets `y = x` at exactly `x = 5`.
+- **A tangency**, where two curves touch without crossing: `y = x²` meets `y = 0` at the
+  origin, and the difference dips to zero and comes straight back up. Each local minimum
+  of |difference| is refined by ternary search and kept only if it actually reaches zero,
+  so `y = x²` touching `y = 0` is found while `y = x² + 0.05` correctly is not.
+
+Curves that lie on top of each other are reported as having no crossing at all, rather
+than one at every sample. The search is memoised on the curves, their sliders and the
+viewport, so it runs when the board changes rather than on every mouse move.
+
 `find_features` is what lets the agent reason instead of guess. It runs a real numeric
 scan — bisection on sign changes, a blow-up probe to tell a vertical asymptote from the
 edge of a domain, and the sign of the Hessian determinant to call a saddle a saddle. So
@@ -258,6 +305,7 @@ src/tools.ts      WebMCP tool definitions; each execute() calls into store.ts
 src/features.ts   numeric analysis behind find_features
 src/normalize.ts  LaTeX-ish input -> math.js source (\frac, \sqrt, ^{}, |x| …)
 src/render2d.ts   canvas renderer; pan/zoom writes back through setViewport
+src/snap.ts       cursor snapping tiers and the curve/curve crossing search
 src/render3d.ts   three.js surfaces; mouse orbit writes back through setCamera
 src/ui.ts         keyed DOM rows, updated in place so animation stays smooth
 src/main.ts       wiring, activity log, tool inspector, registration

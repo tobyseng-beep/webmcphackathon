@@ -251,6 +251,33 @@ select { font-size: .86rem; }
   z-index: 5;
 }
 
+/* The stand-in pointer, drawn at the snapped point with its tip exactly on the
+   curve. The native cursor is hidden while this is visible (see .snap-hidden),
+   so the student sees one pointer that rides the line. */
+.snap-cursor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 6;
+  filter: drop-shadow(0 1px 2px rgba(16, 24, 40, .35));
+}
+.snap-cursor svg { display: block; }
+/* Hide the real cursor over the canvas only while something is snapped. */
+#canvas2d.snap-hidden { cursor: none; }
+
+/* Curve/curve crossings, marked with the same circle the cursor wears when it
+   snaps -- hollow rather than filled, so a place you could land on never looks
+   like the live pointer. Same geometry as .hover-dot by design. */
+.intersection-markers { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.intersection-dot {
+  position: absolute;
+  width: 11px; height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2.5px var(--accent), 0 0 0 4px rgba(255, 255, 255, .9);
+  pointer-events: none;
+}
+
 .hover-dot {
   position: absolute;
   width: 11px; height: 11px;

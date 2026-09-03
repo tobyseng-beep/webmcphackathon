@@ -73,6 +73,16 @@
     </div>
     <div id="hover-box" class="hover-box" hidden></div>
     <div id="hover-dot" class="hover-dot" hidden></div>
+    <!-- Stands in for the real pointer while it is riding a curve: the native
+         cursor is hidden and this is drawn at the snapped point instead, so
+         there is one pointer on screen rather than a cursor plus a dot. -->
+    <div id="snap-cursor" class="snap-cursor" hidden aria-hidden="true">
+      <svg viewBox="0 0 12 19" width="12" height="19">
+        <path d="M1 1 L1 15.2 L4.6 11.8 L7.1 17.4 L9.6 16.3 L7.2 10.9 L11.6 10.6 Z"
+              fill="#fff" stroke="#111827" stroke-width="1.3" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div id="intersection-markers" class="intersection-markers"></div>
     <div id="empty-hint" class="empty-hint">
       <p>Ask your agent something like:</p>
       <ul>

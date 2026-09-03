@@ -4,7 +4,15 @@
 
 import { getState, scope, setViewport } from './store';
 import { niceStep } from './gridmath';
-import { showHover, hideHover } from './hover';
+import { showHover, hideHover, showSnapCursor, showIntersectionMarkers } from './hover';
+import {
+  MARKER_HIDE_RADIUS_PX,
+  MAX_MARKED_INTERSECTIONS,
+  curveIntersections,
+  resolveSnap,
+  type SnapContext,
+  type SnapHit,
+} from './snap';
 import type { Expression } from './types';
 
 let canvas: HTMLCanvasElement;
@@ -313,7 +321,10 @@ let interacting = false;
 export function draw(): void {
   if (!ctx) return;
   const state = getState();
-  if (state.mode !== '2d') return;
+  if (state.mode !== '2d') {
+    showIntersectionMarkers([]);
+    return;
+  }
 
   ctx.save();
   ctx.scale(dpr, dpr);
@@ -339,50 +350,61 @@ export function draw(): void {
   }
   drawAnnotations(t);
   ctx.restore();
+
+  // Markers are DOM, not canvas, so they need repositioning whenever the view or
+  // the curves change -- not only when the pointer moves.
+  updateIntersectionMarkers(t);
 }
 
-interface CurveSnapResult {
-  resolvedX?: number;
-  resolvedY?: number;
+/** The snap the cursor is currently holding, so it takes effort to leave. */
+let heldSnap: SnapHit | null = null;
+/** Last pointer position in viewport coords, so markers survive a pan or zoom. */
+let lastPointer: { x: number; y: number } | null = null;
+
+function snapContext(t: Transforms, stepX: number, stepY: number): SnapContext {
+  return {
+    pxPerX: t.W / (t.xmax - t.xmin),
+    pxPerY: t.H / (t.ymax - t.ymin),
+    minorX: stepX / 5,
+    minorY: stepY / 5,
+  };
 }
 
 /**
- * Snap the hover readout onto a plotted y=f(x) or x=g(y) curve, not just the
- * grid. The capture radius is double a normal grid snap ("double the
- * strength"), and the case that matters most -- the curve crossing exactly
- * where a vertical and horizontal grid line meet -- locks both coordinates to
- * that grid intersection instead of the raw curve value.
+ * Ring the curve/curve crossings. They appear only when the board has few
+ * enough of them to stay readable, and one stands down when the cursor comes
+ * near it -- either the cursor is about to land on the crossing, where its own
+ * circle and readout take over, or it is hovering just off it and a second
+ * circle would only crowd the pointer.
  */
-function curveSnap(rawX: number, rawY: number, stepX: number, stepY: number): CurveSnapResult {
-  // Strong magnetism: capture within two minor grid cells of the curve, so it
-  // is hard to slip off the line while sliding along it, and the curve wins
-  // over nearby grid points.
-  const thresholdX = (stepX / 5) * 2;
-  const thresholdY = (stepY / 5) * 2;
-
-  // Find the nearest plotted curve to the RAW cursor and lock onto the exact
-  // point on it under the cursor, so the marker glides smoothly along the line.
-  // Grid snap is intentionally not applied here -- it governs the free readout
-  // when the cursor is not near any curve.
-  let best: { axis: 'y' | 'x'; x: number; y: number; dist: number } | null = null;
-  for (const expr of getState().expressions) {
-    if (!expr.visible || expr.error || !expr.fn) continue;
-    if (expr.kind === 'explicit_y') {
-      const y = evaluator(expr, 'x')(rawX);
-      const dist = Math.abs(rawY - y);
-      if (Number.isFinite(y) && dist <= thresholdY && (!best || dist < best.dist)) {
-        best = { axis: 'y', x: rawX, y, dist };
-      }
-    } else if (expr.kind === 'explicit_x') {
-      const x = evaluator(expr, 'y')(rawY);
-      const dist = Math.abs(rawX - x);
-      if (Number.isFinite(x) && dist <= thresholdX && (!best || dist < best.dist)) {
-        best = { axis: 'x', x, y: rawY, dist };
-      }
-    }
+function updateIntersectionMarkers(t: Transforms): void {
+  const state = getState();
+  if (state.mode !== '2d' || !state.snapToCurve) {
+    showIntersectionMarkers([]);
+    return;
   }
-  if (!best) return {};
-  return { resolvedX: best.x, resolvedY: best.y };
+  // A canvas that has not been laid out yet measures zero; positioning against
+  // that would put every marker off-screen, so wait for a real measurement.
+  if (!(t.W > 0) || !(t.H > 0)) return;
+
+  const points = curveIntersections();
+  if (points.length === 0 || points.length > MAX_MARKED_INTERSECTIONS) {
+    showIntersectionMarkers([]);
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const markers = [];
+  for (const p of points) {
+    const px = t.toPx(p.x), py = t.toPy(p.y);
+    if (px < 0 || px > t.W || py < 0 || py > t.H) continue;
+    if (lastPointer) {
+      const away = Math.hypot(lastPointer.x - (rect.left + px), lastPointer.y - (rect.top + py));
+      if (away <= MARKER_HIDE_RADIUS_PX) continue;
+    }
+    markers.push({ x: rect.left + px, y: rect.top + py });
+  }
+  showIntersectionMarkers(markers);
 }
 
 function attachInteraction(): void {
@@ -403,6 +425,11 @@ function attachInteraction(): void {
         xmin: t.xmin - dx, xmax: t.xmax - dx,
         ymin: t.ymin + dy, ymax: t.ymax + dy,
       });
+      // Panning takes the pointer off any curve it was riding, so the real
+      // cursor has to come back -- otherwise the drag happens with no pointer
+      // visible at all.
+      heldSnap = null;
+      canvas.classList.remove('snap-hidden');
       hideHover();
       return;
     }
@@ -410,24 +437,40 @@ function attachInteraction(): void {
     const stepX = niceStep(t.xmax - t.xmin, Math.max(4, t.W / 90));
     const stepY = niceStep(t.ymax - t.ymin, Math.max(4, t.H / 70));
     const rawX = t.toX(e.offsetX), rawY = t.toY(e.offsetY);
-    const curve = getState().snapToCurve ? curveSnap(rawX, rawY, stepX, stepY) : {};
+    lastPointer = { x: e.clientX, y: e.clientY };
 
-    // When the readout locks onto a curve, anchor the box (and draw a dot) at
-    // that point on screen rather than at the raw cursor.
+    heldSnap = getState().snapToCurve
+      ? resolveSnap(rawX, rawY, snapContext(t, stepX, stepY), heldSnap)
+      : null;
+
+    // When the cursor locks onto a curve it stops being drawn where the mouse
+    // is and starts being drawn on the curve: the native pointer is hidden and
+    // the stand-in takes its place, so one pointer rides the line.
     let anchorX = e.clientX, anchorY = e.clientY;
     let marker: { x: number; y: number } | null = null;
-    if (curve.resolvedX !== undefined && curve.resolvedY !== undefined) {
+    if (heldSnap) {
       const rect = canvas.getBoundingClientRect();
-      anchorX = rect.left + t.toPx(curve.resolvedX);
-      anchorY = rect.top + t.toPy(curve.resolvedY);
+      anchorX = rect.left + t.toPx(heldSnap.x);
+      anchorY = rect.top + t.toPy(heldSnap.y);
       marker = { x: anchorX, y: anchorY };
     }
+    canvas.classList.toggle('snap-hidden', marker !== null);
+    showSnapCursor(marker);
+
     showHover(anchorX, anchorY, [
-      { label: 'x', value: rawX, majorStep: stepX, resolvedValue: curve.resolvedX },
-      { label: 'y', value: rawY, majorStep: stepY, resolvedValue: curve.resolvedY },
+      { label: 'x', value: rawX, majorStep: stepX, resolvedValue: heldSnap?.x },
+      { label: 'y', value: rawY, majorStep: stepY, resolvedValue: heldSnap?.y },
     ], marker);
+    updateIntersectionMarkers(t);
   });
-  canvas.addEventListener('pointerleave', () => hideHover());
+  canvas.addEventListener('pointerleave', () => {
+    lastPointer = null;
+    heldSnap = null;
+    canvas.classList.remove('snap-hidden');
+    hideHover();
+    const t = transforms();
+    updateIntersectionMarkers(t);
+  });
   const end = () => { dragging = false; interacting = false; draw(); };
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
@@ -447,6 +490,19 @@ function attachInteraction(): void {
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => { interacting = false; draw(); }, 160);
   }, { passive: false });
+}
+
+/**
+ * Drop every 2D-only overlay: the readout, the stand-in cursor and the
+ * intersection flags. These are DOM siblings of the canvas rather than pixels
+ * on it, so hiding the canvas does not hide them -- the 3D board has to say so.
+ */
+export function clearOverlays2D(): void {
+  lastPointer = null;
+  heldSnap = null;
+  if (canvas) canvas.classList.remove('snap-hidden');
+  hideHover();
+  showIntersectionMarkers([]);
 }
 
 export { resize as resize2D };

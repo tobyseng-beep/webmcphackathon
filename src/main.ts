@@ -5,7 +5,7 @@
 import * as graph from './store';
 import { TOOLS } from './tools';
 import { PRESETS } from './presets';
-import { initRender2D, draw as draw2D, resize2D } from './render2d';
+import { initRender2D, draw as draw2D, resize2D, clearOverlays2D } from './render2d';
 import { initRender3D, rebuild as rebuild3D, resize3D } from './render3d';
 import { initHoverBox } from './hover';
 import { renderAll, focusLastExpression } from './ui';
@@ -19,12 +19,14 @@ const labels3d = mustQuery<HTMLDivElement>('#labels3d');
 const stage = mustQuery<HTMLElement>('.stage');
 const hoverBox = mustQuery<HTMLDivElement>('#hover-box');
 const hoverDot = mustQuery<HTMLDivElement>('#hover-dot');
+const snapCursor = mustQuery<HTMLDivElement>('#snap-cursor');
+const intersectionMarkers = mustQuery<HTMLDivElement>('#intersection-markers');
 const logEl = mustQuery<HTMLDivElement>('#log');
 const badge = mustQuery<HTMLDivElement>('#mcp-badge');
 const badgeText = mustQuery<HTMLSpanElement>('#mcp-text');
 const startIn3D = new URLSearchParams(location.search).get('mode') === '3d';
 
-initHoverBox(hoverBox, stage, hoverDot);
+initHoverBox(hoverBox, stage, hoverDot, snapCursor, intersectionMarkers);
 
 const snapCurveToggle = mustQuery<HTMLInputElement>('#snap-curve-toggle');
 snapCurveToggle.checked = graph.getState().snapToCurve;
@@ -139,7 +141,18 @@ function applyMode(): void {
     url.searchParams.set('mode', mode);
     history.replaceState(null, '', url);
   }
-  if (is3d) { resize3D(); rebuild3D(); } else { resize2D(); }
+  // The 2D readout, snap cursor and intersection markers are DOM siblings of
+  // the canvas, so hiding the canvas is not enough to take them off screen.
+  if (is3d) {
+    clearOverlays2D();
+    resize3D();
+    rebuild3D();
+  } else {
+    // The canvas has only just been un-hidden, so it can still measure zero on
+    // this tick; draw again once layout has settled or the markers stay off.
+    resize2D();
+    requestAnimationFrame(() => { resize2D(); draw2D(); });
+  }
 }
 
 graph.subscribe((reason) => {
