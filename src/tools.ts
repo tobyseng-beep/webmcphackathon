@@ -28,6 +28,9 @@ const summary = () => {
     })),
     sliders: s.sliders.map((sl) => ({ name: sl.name, value: +sl.value.toFixed(4), min: sl.min, max: sl.max })),
     viewport: s.viewport,
+    // The student can change these from the board; report them so a reading
+    // that has been snapped is never mistaken for the raw cursor position.
+    snapping: { to_curve: s.snapToCurve, to_grid: s.snapping },
   };
 };
 
@@ -255,6 +258,27 @@ const toolDefinitions = [
       required: ['latex'],
     },
     execute: async ({ latex, at }: { latex: string; at?: NumericScope }) => graph.evaluateAt(latex, at ?? {}),
+  },
+
+  {
+    name: 'set_snapping',
+    description:
+      'Turn the board\'s two kinds of coordinate snapping on or off. to_curve makes the cursor ride a plotted curve and lock onto crossings, so the readout gives a point that is genuinely on the graph; to_grid rounds a free reading to the nearest grid line. The student has the "Snap to curve" checkbox for the first of these, so read `snapping` back before explaining a coordinate — a reading of exactly (5, 5) means something different when snapping is on than when it is off. Turn to_curve off when you want the student to read a raw position, and on when you are pointing at an intersection.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to_curve: { type: 'boolean', description: 'Snap the cursor onto plotted curves and their crossings.' },
+        to_grid: { type: 'boolean', description: 'Round a free reading to the nearest grid line.' },
+      },
+    },
+    execute: async ({ to_curve, to_grid }: { to_curve?: boolean; to_grid?: boolean }) => {
+      if (to_curve === undefined && to_grid === undefined) {
+        return { ok: false, error: 'Pass to_curve and/or to_grid.', ...summary() };
+      }
+      if (to_curve !== undefined) graph.setSnapToCurve(Boolean(to_curve));
+      if (to_grid !== undefined) graph.setSnapping(Boolean(to_grid));
+      return { ok: true, ...summary() };
+    },
   },
 
   {

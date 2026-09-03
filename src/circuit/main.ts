@@ -356,6 +356,7 @@ function updateChrome(): void {
   undoBtn.disabled = !state.canUndo;
   redoBtn.disabled = !state.canRedo;
   renderScopeChrome();
+  renderSimToggle();
   const warnings = state.running ? state.solution?.warnings ?? [] : [];
   if (warnings.length > 0) {
     warningBar.hidden = false;
@@ -372,11 +373,16 @@ circuit.subscribe(() => { renderInspector(); updateChrome(); });
 const simToggle = mustQuery<HTMLButtonElement>('#sim-toggle');
 const simLabel = mustQuery<HTMLSpanElement>('#sim-label');
 simToggle.addEventListener('click', () => {
-  const running = !circuit.getState().running;
-  circuit.setRunning(running);
+  circuit.setRunning(!circuit.getState().running);
+});
+
+// Read the button's appearance off the store rather than setting it in the
+// click handler: the agent can pause too, and the button has to say so.
+function renderSimToggle(): void {
+  const running = circuit.getState().running;
   simToggle.classList.toggle('paused', !running);
   simLabel.textContent = running ? 'Simulating' : 'Paused';
-});
+}
 
 mustQuery<HTMLButtonElement>('#sim-reset').addEventListener('click', () => {
   circuit.resetSimulation();

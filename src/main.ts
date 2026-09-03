@@ -31,6 +31,9 @@ initHoverBox(hoverBox, stage, hoverDot, snapCursor, intersectionMarkers);
 const snapCurveToggle = mustQuery<HTMLInputElement>('#snap-curve-toggle');
 snapCurveToggle.checked = graph.getState().snapToCurve;
 snapCurveToggle.addEventListener('change', () => graph.setSnapToCurve(snapCurveToggle.checked));
+// The agent can flip this too, so the checkbox reads its state from the store
+// rather than only from the last click.
+graph.subscribe(() => { snapCurveToggle.checked = graph.getState().snapToCurve; });
 
 const undoBtn = mustQuery<HTMLButtonElement>('#undo-btn');
 const redoBtn = mustQuery<HTMLButtonElement>('#redo-btn');

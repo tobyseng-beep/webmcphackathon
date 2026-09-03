@@ -429,6 +429,34 @@ const toolDefinitions = [
   },
 
   {
+    name: 'pause_simulation',
+    description:
+      'Freeze the live simulation where it is. Voltages, currents and capacitor charges hold their present values instead of advancing, which is what you want before talking about a particular moment of a transient — the point where an RC curve reaches 63%, say. The board can still be edited while paused, but the readings will not update until you resume. The student has the same control as the Simulating/Paused button above the board, so check `running` in a readback before assuming the circuit is live.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      if (!circuit.getState().running) {
+        return { ok: false, error: 'The simulation is already paused.', ...summary() };
+      }
+      circuit.setRunning(false);
+      return { ok: true, running: false, ...summary() };
+    },
+  },
+
+  {
+    name: 'resume_simulation',
+    description:
+      'Let a paused simulation run again from where it stopped, re-solving the circuit immediately so the readings catch up. Use this after pause_simulation, or when a readback shows running:false and you need live values.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      if (circuit.getState().running) {
+        return { ok: false, error: 'The simulation is already running.', ...summary() };
+      }
+      circuit.setRunning(true);
+      return { ok: true, running: true, ...summary() };
+    },
+  },
+
+  {
     name: 'reset_simulation',
     description:
       'Discharge every capacitor and restart the simulation from time zero. Use this before demonstrating an RC charging curve so the capacitor starts empty, or to replay a transient from the beginning. Has no effect on a purely resistive circuit.',
