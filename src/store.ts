@@ -210,13 +210,35 @@ function syncSlidersToExpressions(): string[] {
   return newSliders;
 }
 
-const POINT_RE = /^\(\s*([^,()]+)\s*,\s*([^,()]+)\s*\)$/;
+function pointSource(src: string): string | null {
+  const trimmed = src.trim();
+  if (!trimmed.startsWith('(') || !trimmed.endsWith(')')) return null;
+
+  const inner = trimmed.slice(1, -1);
+  let depth = 0;
+  let comma = -1;
+  for (let i = 0; i < inner.length; i++) {
+    const char = inner[i];
+    if (char === '(' || char === '[') depth++;
+    else if (char === ')' || char === ']') depth--;
+    else if (char === ',' && depth === 0) {
+      if (comma !== -1) return null;
+      comma = i;
+    }
+    if (depth < 0) return null;
+  }
+  if (depth !== 0 || comma === -1) return null;
+
+  const x = inner.slice(0, comma).trim();
+  const y = inner.slice(comma + 1).trim();
+  return x && y ? `[${x}, ${y}]` : null;
+}
 
 // Decide what kind of object an input describes, and produce the expression(s)
 // that need compiling. Returns { kind, source, extra } or throws.
 function classify(src: string): { kind: ExpressionKind; source: string } {
-  const point = src.match(POINT_RE);
-  if (point) return { kind: 'point', source: `[${point[1]}, ${point[2]}]` };
+  const point = pointSource(src);
+  if (point) return { kind: 'point', source: point };
 
   const eq = splitEquation(src);
   if (!eq) {
@@ -313,7 +335,22 @@ export function list() {
   return state.expressions.map((e) => ({
     id: e.id, latex: e.latex, kind: e.kind, color: e.color,
     visible: e.visible, error: e.error ?? undefined,
+    ...(e.kind === 'point' ? { point: pointCoordinates(e) ?? undefined } : {}),
   }));
+}
+
+export function pointCoordinates(expression: Expression): { x: number; y: number } | null {
+  if (expression.kind !== 'point' || !expression.fn) return null;
+  try {
+    const value = expression.fn.evaluate(scope());
+    const pair = value && typeof value.toArray === 'function' ? value.toArray() : value;
+    if (!Array.isArray(pair) || pair.length !== 2) return null;
+    const x = Number(pair[0]);
+    const y = Number(pair[1]);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  } catch {
+    return null;
+  }
 }
 
 export function defineSlider(name: string, spec: SliderSpec = {}, quiet = false): Result<{ slider: import('./types').Slider }> {

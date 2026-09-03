@@ -22,6 +22,7 @@ const summary = () => {
     mode: s.mode,
     expressions: graph.list().map((e) => ({
       id: e.id, latex: e.latex, kind: e.kind,
+      ...(e.point ? { point: e.point } : {}),
       ...(e.visible ? {} : { visible: false }),
       ...(e.error ? { error: e.error } : {}),
     })),
@@ -42,11 +43,11 @@ const toolDefinitions = [
   {
     name: 'add_expression',
     description:
-      'Plot a new expression and render it immediately. Accepts plain math ("y = a*x^2 + b") or LaTeX ("y = \\\\frac{x}{2}"). In 2D it supports y = f(x), x = g(y), polar and implicit equations. In 3D it supports surfaces oriented as z = f(x,y), y = f(x,z), or x = f(y,z); a bare expression is treated as z = expression. Free variables automatically become sliders while x, y, z and the polar coordinate theta do not, so "y = a*sin(b*x)" creates sliders a and b in one call. A slider is removed when its parameter no longer appears in any expression. If the expression does not parse, this returns ok:false with the parser error -- read it, fix the syntax, and call again rather than reporting failure to the student.',
+      'Plot a new expression and render it immediately. Accepts plain math ("y = a*x^2 + b"), LaTeX ("y = \\\\frac{x}{2}"), or a 2D point written as "(2, 3)". Point coordinates may contain expressions or slider parameters, such as "(a, sin(a))". In 2D it supports y = f(x), x = g(y), polar and implicit equations. In 3D it supports surfaces oriented as z = f(x,y), y = f(x,z), or x = f(y,z); a bare expression is treated as z = expression. Free variables automatically become sliders while x, y, z and the polar coordinate theta do not. A slider is removed when its parameter no longer appears in any expression. If the expression does not parse, this returns ok:false with the parser error -- read it, fix the syntax, and call again rather than reporting failure to the student.',
     inputSchema: {
       type: 'object',
       properties: {
-        latex: { type: 'string', description: 'The expression or equation to plot, e.g. "y = a*x^2" or "z = x^2 - y^2".' },
+        latex: { type: 'string', description: 'The expression, equation, or 2D point to plot, e.g. "y = a*x^2", "(2, 3)", or "z = x^2 - y^2".' },
         id: { type: 'string', description: 'Optional stable id. Supply one if you intend to update or remove this expression later.' },
         color: { type: 'string', description: 'Optional CSS colour, e.g. "#c74440". Defaults to the next colour in the palette.' },
       },
@@ -55,6 +56,47 @@ const toolDefinitions = [
     execute: async ({ latex, id, color }: { latex: string; id?: string; color?: string }) => {
       const result = graph.upsert(id ?? null, { latex, color });
       return result.ok ? { ...result, ...summary() } : result;
+    },
+  },
+
+  {
+    name: 'plot_point',
+    description:
+      'Plot one exact coordinate as a visible point on the 2D graph. Use this when teaching ordered pairs, marking a measured value, or placing a point before drawing a curve through it. The point is also added to the expression list in "(x, y)" form, so the student can edit or delete it normally. Add a short label when its meaning matters.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        x: { type: 'number', description: 'Horizontal coordinate.' },
+        y: { type: 'number', description: 'Vertical coordinate.' },
+        label: { type: 'string', description: 'Optional short label shown beside the point.' },
+        id: { type: 'string', description: 'Optional stable expression id for later updates or removal.' },
+        color: { type: 'string', description: 'Optional CSS colour, e.g. "#c74440".' },
+      },
+      required: ['x', 'y'],
+    },
+    execute: async ({ x, y, label, id, color }: { x: number; y: number; label?: string; id?: string; color?: string }) => {
+      if (graph.getState().mode !== '2d') {
+        return { ok: false, error: 'Points in (x, y) form are available in 2D mode. Call set_mode with "2d" first.' };
+      }
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return { ok: false, error: 'x and y must both be finite numbers.' };
+      }
+
+      graph.beginBatch();
+      try {
+        const result = graph.upsert(id ?? null, { latex: `(${x}, ${y})`, color });
+        if (!result.ok) return result;
+        const text = label?.trim();
+        const annotation = text ? graph.annotate({ x, y, text }) : null;
+        return {
+          ...result,
+          point: { x, y },
+          ...(annotation?.ok ? { annotation: annotation.annotation } : {}),
+          ...summary(),
+        };
+      } finally {
+        graph.endBatch();
+      }
     },
   },
 

@@ -12,7 +12,7 @@
 // Radii are in screen pixels, not graph units, so the feel does not change as
 // the viewport zooms.
 
-import { getState, scope } from './store';
+import { getState, pointCoordinates, scope } from './store';
 import type { Expression, Viewport } from './types';
 
 // Every radius below is deliberately tight. Snapping should feel like the
@@ -36,6 +36,8 @@ const GRID_CROSS_RELEASE_PX = 9;
  */
 const CURVE_CROSS_CAPTURE_PX = 10;
 const CURVE_CROSS_RELEASE_PX = 15;
+const POINT_CAPTURE_PX = 12;
+const POINT_RELEASE_PX = 18;
 
 /** Inside this radius an intersection's marker gives way to the cursor's own. */
 export const MARKER_HIDE_RADIUS_PX = 36;
@@ -43,7 +45,7 @@ export const MARKER_HIDE_RADIUS_PX = 36;
 /** Above this many crossings the board is too busy to mark them all. */
 export const MAX_MARKED_INTERSECTIONS = 3;
 
-export type SnapKind = 'curve' | 'curve-grid' | 'curve-curve';
+export type SnapKind = 'point' | 'curve' | 'curve-grid' | 'curve-curve';
 
 export interface SnapHit {
   x: number;
@@ -341,6 +343,24 @@ export function resolveSnap(
   // curve it found. Better to offer no snapping at all than a wrong one.
   if (!(ctx.pxPerX > 0) || !(ctx.pxPerY > 0)) return null;
   if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return null;
+
+  // An explicitly plotted point is an exact coordinate, so it outranks the
+  // sampled curve tiers when the cursor is close to its marker.
+  const heldPointId = previous?.kind === 'point' ? previous.curves[0] : null;
+  let bestPoint: { x: number; y: number; id: string; px: number } | null = null;
+  for (const expression of getState().expressions) {
+    if (!expression.visible || expression.error || expression.kind !== 'point') continue;
+    const point = pointCoordinates(expression);
+    if (!point) continue;
+    const limit = expression.id === heldPointId ? POINT_RELEASE_PX : POINT_CAPTURE_PX;
+    const px = pxDist(rawX, rawY, point.x, point.y, ctx);
+    if (px <= limit && (!bestPoint || px < bestPoint.px)) {
+      bestPoint = { ...point, id: expression.id, px };
+    }
+  }
+  if (bestPoint) {
+    return { x: bestPoint.x, y: bestPoint.y, kind: 'point', curves: [bestPoint.id] };
+  }
 
   // Strongest tier first: a crossing of two curves outranks everything nearby.
   const heldCrossing = previous?.kind === 'curve-curve' ? previous : null;

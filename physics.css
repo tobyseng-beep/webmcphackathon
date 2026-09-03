@@ -37,6 +37,24 @@
 .part svg, .tool-btn svg { width: 44px; height: 28px; }
 .part span, .tool-btn span { font-size: .74rem; font-weight: 600; }
 
+.drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  width: auto;
+  height: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  opacity: .75;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 6px 20px rgba(16,24,40,.18);
+}
+.drag-ghost.over-canvas { color: var(--accent); border-color: var(--accent); opacity: .95; }
+.drag-ghost svg { display: block; width: 44px; height: 28px; }
+
 .tool-btn.active {
   background: #eff6ff;
   border-color: var(--accent);

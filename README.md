@@ -42,7 +42,7 @@ To let an agent drive it, open the live URL in either:
 - **ChatGPT desktop**, in the in-app browser, or
 - **Chrome 149+** with `chrome://flags/#enable-webmcp-testing` enabled.
 
-The badge in the top right shows how many tools the current board registered (17 on the
+The badge in the top right shows how many tools the current board registered (18 on the
 grapher). If the browser attaches WebMCP after page load, the badge connects
 automatically. Every tool call the agent makes appears in the *Agent activity* panel.
 
@@ -58,7 +58,7 @@ with JSON arguments — same code path the agent uses.
 
 ## How WebMCP is implemented
 
-The grapher's 17 tools are registered on `document.modelContext`
+The grapher's 18 tools are registered on `document.modelContext`
 ([`src/tools.ts`](src/tools.ts)); the other sandboxes register their own toolsets:
 
 ```ts
@@ -109,7 +109,8 @@ the motion is the whole point.
 | Tool | What it does |
 |---|---|
 | `list_expressions` | Read the board: expressions, live slider values, viewport, mode |
-| `add_expression` | Plot 2D curves or 3D surfaces solved for any axis (`x=f(y,z)`, `y=f(x,z)`, `z=f(x,y)`); returns parse errors |
+| `add_expression` | Plot 2D curves, points in `(x,y)` form, or 3D surfaces solved for any axis; returns parse errors |
+| `plot_point` | Plot and optionally label an exact coordinate on the 2D graph |
 | `update_expression` | Change a curve in place, keeping its id and colour |
 | `remove_expression` | Delete a curve |
 | `define_slider` | Create a parameter or change its range, step and value |

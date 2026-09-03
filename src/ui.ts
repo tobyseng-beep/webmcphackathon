@@ -110,7 +110,7 @@ function makeExprRow(expr: Expression): ExprRow {
   input.type = 'text';
   input.className = 'expr-input';
   input.spellcheck = false;
-  input.placeholder = 'y = a·x² + b';
+  input.placeholder = 'y = a·x² or (2, 3)';
 
   const del = document.createElement('button');
   del.className = 'ghost';

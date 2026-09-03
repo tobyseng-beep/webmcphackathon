@@ -2,7 +2,7 @@
 // renders whatever the store holds, and routes pan/zoom back through
 // store.setViewport so the agent sees the same viewport the student does.
 
-import { getState, scope, setViewport } from './store';
+import { getState, pointCoordinates, scope, setViewport } from './store';
 import { niceStep } from './gridmath';
 import { showHover, hideHover, showSnapCursor, showIntersectionMarkers } from './hover';
 import {
@@ -267,16 +267,21 @@ function drawImplicit(expr: Expression, t: Transforms, quality: number): void {
 }
 
 function drawPoint(expr: Expression, t: Transforms): void {
-  const fn = expr.fn;
-  if (!fn) return;
-  try {
-    const val = fn.evaluate(scope());
-    const arr = val && val.toArray ? val.toArray() : val;
-    const [x, y] = arr as [unknown, unknown];
-    ctx.beginPath();
-    ctx.arc(t.toPx(Number(x)), t.toPy(Number(y)), 5, 0, Math.PI * 2);
-    ctx.fill();
-  } catch { /* not a plottable point */ }
+  const point = pointCoordinates(expr);
+  if (!point) return;
+  const px = t.toPx(point.x);
+  const py = t.toPy(point.y);
+  if (px < -10 || px > t.W + 10 || py < -10 || py > t.H + 10) return;
+
+  ctx.save();
+  ctx.fillStyle = expr.color;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(px, py, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawAnnotations(t: Transforms): void {

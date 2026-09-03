@@ -8,7 +8,7 @@ The pages and their tools:
 
 | Page | URL | Tools | A read-only tool to test with |
 |---|---|---|---|
-| 2D / 3D grapher | `/graph.html` | 17 | `list_expressions` |
+| 2D / 3D grapher | `/graph.html` | 18 | `list_expressions` |
 | Circuit sandbox | `/circuit.html` | 22 | `list_components` |
 | Chemistry sandbox | `/chemistry.html` | 15 | `list_atoms` |
 | Physics sandbox | `/physics.html` | 27 | `describe_sandbox` |
