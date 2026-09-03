@@ -388,6 +388,14 @@ function updateIntersectionMarkers(t: Transforms): void {
     showIntersectionMarkers([]);
     return;
   }
+  // Panning and zooming change the viewport every frame, which invalidates the
+  // crossing search every frame. Implicit curves make that search expensive, so
+  // stand the markers down for the duration of the gesture -- the readout is
+  // hidden then too -- and let them come back when the view settles.
+  if (interacting) {
+    showIntersectionMarkers([]);
+    return;
+  }
   // A canvas that has not been laid out yet measures zero; positioning against
   // that would put every marker off-screen, so wait for a real measurement.
   if (!(t.W > 0) || !(t.H > 0)) return;

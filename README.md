@@ -157,9 +157,28 @@ looks like the live pointer. Above three the board is too busy and they all stan
 marker also stands down when the pointer comes within 36 px of its point, so the cursor's
 own circle and readout take over rather than stacking two circles on one spot.
 
-Crossings are found by sampling for sign changes and bisecting, over pairs of `y=f(x)`
-and `x=g(y)` curves. Two cases need catching beyond a plain sign change, because neither
-one changes sign:
+Snapping applies to every kind of curve the board can draw, not just `y=f(x)`. What
+differs is what each kind can offer, and the search is built around exactly that: an
+**explicit** or **implicit** curve has a *field* — a signed quantity that is zero on the
+curve — while an **explicit** or **polar** curve has a *parameterisation* it can be
+walked along. Given any two curves, whichever one can be walked is walked, and the
+other's field is root-found along the way, which collapses almost every pairing into the
+same one-dimensional search:
+
+| Pair | How it is solved |
+|---|---|
+| explicit ∩ explicit | walk one, root-find the other's field |
+| explicit ∩ implicit | walk the explicit one, root-find `F(x, y)` |
+| polar ∩ explicit or implicit | walk the polar one in θ |
+| implicit ∩ implicit | grid scan for cells both curves enter, then 2D Newton |
+| polar ∩ polar | thinned polyline against polyline |
+
+An implicit `F` is divided by its own gradient before use, which turns it into an
+approximate signed distance — otherwise `x²+y²−25` and `1000(x²+y²−25)` would need
+different tolerances despite being the same circle. Detection still runs on the raw `F`,
+which is a fifth of the evaluations and has the same zero set.
+
+Two cases need catching beyond a plain sign change, because neither one changes sign:
 
 - **A root landing exactly on a sample.** The common case for the tidy numbers a lesson is
   built from — `y = 5` meets `y = x` at exactly `x = 5`.
