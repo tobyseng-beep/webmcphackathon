@@ -23,9 +23,9 @@ self-test: it discovers the tools through `document.modelContext.getTools()` and
 does a safe, read-only `executeTool()` round-trip — the same path an agent host
 uses — then reports in the badge and the browser console.
 
-- In a normal browser the badge reads **“WebMCP unavailable”** and, on click,
-  tells you how to enable it (below). This is expected — normal Chrome/Safari
-  do not expose `document.modelContext`.
+- In a normal browser the badge reads **“Waiting for WebMCP…”** and keeps
+  checking in case an agent host attaches after the page loads. Clicking it
+  tells you how to enable WebMCP (below).
 - In a WebMCP-enabled browser it reads **“WebMCP ✓ N tools”** and the console
   prints the discovered tool names and the round-trip result.
 
@@ -42,12 +42,16 @@ Open the console (⌥⌘J / Ctrl-Shift-J) to see the full report.
    ```js
    const mc = document.modelContext;
    (await mc.getTools()).map(t => t.name);        // list every registered tool
-   await mc.executeTool('list_components', {});     // run one (read-only)
-   await mc.executeTool('add_component', { type: 'resistor', value: 220 });
+   const tools = await mc.getTools();
+   const list = tools.find(t => t.name === 'list_components');
+   await mc.executeTool(list, {});                   // run one (read-only)
+   const add = tools.find(t => t.name === 'add_component');
+   await mc.executeTool(add, { type: 'resistor', value: 220 });
    ```
 
-   `executeTool` accepts `('<name>', {args})`; if a build differs, the self-test
-   also tries `({ name, arguments })` and `({ name, input })`.
+   `executeTool` takes the registered tool object returned by `getTools()`.
+   The built-in self-test also supports Chrome builds that require the
+   arguments to be JSON-stringified.
 
 ## 3. ChatGPT desktop (a real agent, no flag needed)
 

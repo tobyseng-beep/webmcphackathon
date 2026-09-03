@@ -3,6 +3,7 @@
 // "open the 3D grapher" should work before the student has clicked anything.
 
 import type { WebMcpTool } from './types';
+import { watchWebMcp } from './webmcp';
 
 interface ScatteredEquation {
   text: string;
@@ -105,7 +106,7 @@ const TOOLS: WebMcpTool[] = [
   {
     name: 'open_tool',
     description:
-      'Navigate the browser to one of this site\'s learning tools. Use "2d" for curves in the plane (y=f(x), polar, implicit equations) and "3d" for surfaces z=f(x,y). The page that opens registers the full graphing toolset -- plotting, sliders, animation, feature-finding and annotation -- so call this first, then work there. "circuits" and "physics" are not built yet: this returns ok:false naming the 2D lesson that covers the topic today, so suggest that instead of telling the student it is impossible.',
+      'Navigate to one of this site\'s learning tools. Use "2d" for curves in the plane, "3d" for surfaces, "circuits" for circuit building and measurement, "physics" for mechanics simulations, and "chemistry" for atoms and molecules. The page that opens registers its complete WebMCP toolset, so call this first and continue the lesson there.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -132,15 +133,8 @@ const TOOLS: WebMcpTool[] = [
   },
 ];
 
-const host = document.modelContext ?? navigator.modelContext ?? null;
-if (host) {
-  try {
-    if (typeof host.registerTool === 'function') {
-      for (const tool of TOOLS) host.registerTool(tool);
-    } else if (typeof host.provideContext === 'function') {
-      host.provideContext({ tools: TOOLS });
-    }
-  } catch (err) {
-    console.error('[webmcp] menu registration failed:', err);
+watchWebMcp(TOOLS, (status) => {
+  if (status.available && status.registered === 0) {
+    console.warn('[webmcp] connected on the menu, but no tools registered:', status.reason);
   }
-}
+});

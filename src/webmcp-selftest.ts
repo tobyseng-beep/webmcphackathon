@@ -44,10 +44,12 @@ export async function runWebmcpSelfTest(readOnlyTool: string): Promise<SelfTestR
 
   // Discover tools the way a host does.
   let toolNames: string[] = [];
+  let discoveredTools: unknown[] = [];
   try {
     if (typeof host.getTools === 'function') {
       const tools = await Promise.resolve(host.getTools() as unknown);
       if (Array.isArray(tools)) {
+        discoveredTools = tools;
         toolNames = tools.map((t) => (t && typeof t === 'object' && 'name' in t ? String((t as { name: unknown }).name) : String(t)));
       }
     }
@@ -58,7 +60,15 @@ export async function runWebmcpSelfTest(readOnlyTool: string): Promise<SelfTestR
   let roundTrip: 'ok' | 'failed' | 'unsupported' = 'unsupported';
   let executeStyle: string | null = null;
   if (typeof host.executeTool === 'function') {
+    const registeredTool = discoveredTools.find((tool) => (
+      tool && typeof tool === 'object' && 'name' in tool &&
+      String((tool as { name: unknown }).name) === readOnlyTool
+    ));
     const attempts: { style: string; run: () => unknown }[] = [
+      ...(registeredTool ? [
+        { style: 'executeTool(tool, args)', run: () => host.executeTool!(registeredTool, {}) },
+        { style: 'executeTool(tool, JSON)', run: () => host.executeTool!(registeredTool, '{}') },
+      ] : []),
       { style: 'executeTool(name, args)', run: () => host.executeTool!(readOnlyTool, {}) },
       { style: 'executeTool({ name, arguments })', run: () => host.executeTool!({ name: readOnlyTool, arguments: {} }) },
       { style: 'executeTool({ name, input })', run: () => host.executeTool!({ name: readOnlyTool, input: {} }) },
@@ -87,18 +97,19 @@ export function wireWebmcpTester(
   badge: HTMLElement,
   badgeText: HTMLElement,
   readOnlyTool: string,
-  registeredCount: number,
+  registeredCount: number | (() => number),
 ): void {
   badge.style.cursor = 'pointer';
   badge.title = (badge.title ? badge.title + '  ' : '') + '(click to run a WebMCP self-test)';
   badge.addEventListener('click', async () => {
     const original = badgeText.textContent;
+    const currentRegistered = typeof registeredCount === 'function' ? registeredCount() : registeredCount;
     badgeText.textContent = 'testing…';
     const r = await runWebmcpSelfTest(readOnlyTool);
     // Console report
     console.group('%cWebMCP self-test', 'font-weight:700');
     console.log('available:', r.available, '| host:', r.host);
-    console.log('registered on this page:', registeredCount, '| discovered via getTools():', r.toolCount);
+    console.log('registered on this page:', currentRegistered, '| discovered via getTools():', r.toolCount);
     if (r.toolNames.length) console.log('tools:', r.toolNames.join(', '));
     console.log('executeTool round-trip:', r.roundTrip, r.executeStyle ? `(${r.executeStyle})` : '');
     console.log(r.detail);
@@ -106,7 +117,7 @@ export function wireWebmcpTester(
     // Badge feedback
     if (!r.available) { badgeText.textContent = 'WebMCP unavailable'; }
     else if (r.roundTrip === 'ok') { badgeText.textContent = `WebMCP ✓ ${r.toolCount} tools`; }
-    else { badgeText.textContent = `WebMCP · ${registeredCount} tools`; }
+    else { badgeText.textContent = `WebMCP · ${currentRegistered} tools`; }
     badge.title = r.detail;
     setTimeout(() => { if (badgeText.textContent === 'testing…') badgeText.textContent = original; }, 50);
   });

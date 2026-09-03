@@ -13,7 +13,7 @@ Built for the [WebMCP Challenge](https://webmcp.devpost.com).
 Ask a chatbot *"why does increasing `a` make the parabola narrower?"* and you get a
 paragraph. The student reads a description of a motion they never see.
 
-Chalkboard makes the explanation and the artifact the same object. The agent doesn't
+Smarterboard makes the explanation and the artifact the same object. The agent doesn't
 describe the curve — it **grabs the slider and moves it** while it talks. The `a`
 slider slides across the screen, the parabola visibly tightens, a label lands on the
 vertex, and the words arrive as narration over a thing that is happening.
@@ -42,9 +42,9 @@ To let an agent drive it, open the live URL in either:
 - **ChatGPT desktop**, in the in-app browser, or
 - **Chrome 149+** with `chrome://flags/#enable-webmcp-testing` enabled.
 
-The badge in the top right reads **WebMCP · 15 tools** when registration succeeded, and
-**WebMCP unavailable** otherwise. Every tool call the agent makes appears in the
-*Agent activity* panel on the right as it arrives.
+The badge in the top right shows how many tools the current board registered (17 on the
+grapher). If the browser attaches WebMCP after page load, the badge connects
+automatically. Every tool call the agent makes appears in the *Agent activity* panel.
 
 Things worth asking for:
 
@@ -58,8 +58,8 @@ with JSON arguments — same code path the agent uses.
 
 ## How WebMCP is implemented
 
-All 15 tools are registered on `document.modelContext` at page load
-([`src/tools.ts`](src/tools.ts)):
+The grapher's 17 tools are registered on `document.modelContext`
+([`src/tools.ts`](src/tools.ts)); the other sandboxes register their own toolsets:
 
 ```ts
 document.modelContext.registerTool({
@@ -244,10 +244,9 @@ claim about conservation is a measurement rather than an assertion.
 
 ## Architecture
 
-One rule: **every state change goes through the mutation layer in
-[`src/store.ts`](src/store.ts).** The sliders, the text boxes and the agent tools all
-call the same functions. There is no separate agent path that could drift out of sync
-with what is on screen.
+One rule: **every state change goes through its sandbox's mutation layer.** The controls
+and agent tools call the same store functions, so there is no separate agent path that
+could drift out of sync with what is on screen.
 
 ```
 index.html        the Explore menu; src/menu.ts scatters the equations and
@@ -262,6 +261,7 @@ src/render2d.ts   canvas renderer; pan/zoom writes back through setViewport
 src/render3d.ts   three.js surfaces; mouse orbit writes back through setCamera
 src/ui.ts         keyed DOM rows, updated in place so animation stays smooth
 src/main.ts       wiring, activity log, tool inspector, registration
+src/webmcp.ts     shared late-host detection and awaited tool registration
 
 physics.html            the physics sandbox
 src/physics/types.ts    body, shape, stage, event and telemetry types
@@ -273,6 +273,18 @@ src/physics/render.ts   canvas renderer and pointer tools (draw, erase, force, v
 src/physics/presets.ts  ready-made scenes with teaching notes
 src/physics/tools.ts    WebMCP tool definitions; each execute() calls into store.ts
 src/physics/main.ts     wiring, library palettes, inspector, stage buttons, registration
+
+circuit.html            the circuit sandbox
+src/circuit/store.ts    circuit state and mutations
+src/circuit/solver.ts   live circuit analysis
+src/circuit/tools.ts    circuit WebMCP tools
+src/circuit/main.ts     palette, inspector, scope, activity and registration
+
+chemistry.html            the atom and molecule sandbox
+src/chemistry/store.ts    atom, bond and view mutations
+src/chemistry/analysis.ts structure and valence analysis
+src/chemistry/tools.ts    chemistry WebMCP tools
+src/chemistry/main.ts     periodic table, inspector, activity and registration
 ```
 
 `engine.ts` has no DOM dependency and `store.advance(seconds)` is separate from the
@@ -308,66 +320,6 @@ app into `dist/` with a relative asset base, so it works at the existing
 
 `probe.html` is a one-tool diagnostic page for checking whether a given browser exposes
 WebMCP at all.
-
-Overall project structure
-
-```text
-ai-engineering-workspace/
-│
-├── apps/
-│   ├── web/                         TypeScript
-│   │   ├── src/
-│   │   │   ├── app/
-│   │   │   ├── components/
-│   │   │   ├── editor/
-│   │   │   ├── graphing/
-│   │   │   ├── circuit/
-│   │   │   ├── pcb/
-│   │   │   ├── scene3d/
-│   │   │   ├── simulation/
-│   │   │   ├── ai/
-│   │   │   └── state/
-│   │   └── package.json
-│   │
-│   └── api/                         TypeScript
-│       └── src/
-│
-├── packages/
-│   ├── core/                        TypeScript
-│   ├── math/                        TypeScript
-│   ├── graphing/                    TypeScript
-│   ├── circuit-model/               TypeScript
-│   ├── pcb-model/                   TypeScript
-│   ├── scene-model/                 TypeScript
-│   ├── agent-tools/                 TypeScript
-│   └── shared-types/                TypeScript
-│
-├── engines/
-│   ├── math/                        Python
-│   ├── circuit/                     Rust
-│   ├── pcb/                         Rust
-│   ├── geometry/                    Rust
-│   └── simulation/                  Rust/C++
-│
-├── wasm/
-│   ├── circuit/
-│   ├── pcb/
-│   ├── geometry/
-│   └── simulation/
-│
-├── services/
-│   ├── ai/                          Python
-│   ├── simulation/                  Python/Rust
-│   └── workers/                     Python
-│
-├── mcp/
-│   ├── tools/                       TypeScript
-│   ├── schemas/                     TypeScript
-│   └── webmcp/                      TypeScript
-│
-├── tests/
-│
-└── docs/
 
 ## Licence
 

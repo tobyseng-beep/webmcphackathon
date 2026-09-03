@@ -4,7 +4,7 @@
 // main.ts, so the two pages behave consistently.
 
 import * as circuit from './store';
-import { TOOLS, registerTools } from './tools';
+import { TOOLS } from './tools';
 import { PRESETS } from './presets';
 import { CATALOG, COMPONENT_ORDER, LED_SPEC } from './components';
 import { initCircuitRender, clientToGrid } from './render';
@@ -12,6 +12,7 @@ import { initScope, resizeScope } from './scope';
 import { mustQuery } from '../dom';
 import type { Component, ComponentType, LedColor } from './types';
 import { wireWebmcpTester } from '../webmcp-selftest';
+import { watchWebMcp, type WebMcpStatus } from '../webmcp';
 
 const canvas = mustQuery<HTMLCanvasElement>('#circuit-canvas');
 const logEl = mustQuery<HTMLDivElement>('#log');
@@ -31,6 +32,7 @@ const redoBtn = mustQuery<HTMLButtonElement>('#redo-btn');
 
 type CallSource = 'you' | 'agent';
 let callSource: CallSource | null = null;
+let suppressLogging = false;
 
 function logCall(name: string, args: Record<string, unknown>, source: CallSource): HTMLDivElement {
   const empty = logEl.querySelector('.empty');
@@ -58,15 +60,19 @@ for (const tool of TOOLS) {
   const inner = tool.execute;
   tool.execute = async (args) => {
     const source = callSource ?? 'agent';
-    const entry = logCall(tool.name, args, source);
+    const entry = suppressLogging ? null : logCall(tool.name, args, source);
     try {
       const result = await inner(args ?? {});
       if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
-        entry.classList.add('fail');
+        entry?.classList.add('fail');
+      }
+      if (tool.name === 'load_preset' && result && typeof result === 'object' && 'ok' in result && result.ok !== false) {
+        const name = typeof args?.name === 'string' ? args.name : '';
+        if (name in PRESETS) presetSelect.value = name;
       }
       return result;
     } catch (err) {
-      entry.classList.add('fail');
+      entry?.classList.add('fail');
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   };
@@ -432,7 +438,6 @@ for (const [name, preset] of Object.entries(PRESETS)) {
 presetSelect.addEventListener('change', async () => {
   if (!presetSelect.value) return;
   await runTool('load_preset', { name: presetSelect.value }, 'you');
-  presetSelect.value = '';
 });
 
 /* ---------- tool inspector (identical pattern to the grapher) ---------- */
@@ -477,26 +482,31 @@ mustQuery<HTMLButtonElement>('#tool-run').addEventListener('click', async () => 
 
 /* ---------- WebMCP registration ---------- */
 
-const status = registerTools();
-if (status.available) {
-  badge.className = 'badge ok';
-  badgeText.textContent = `WebMCP · ${status.registered} tools`;
-  badge.title = `Registered ${status.registered} tools on ${status.host}`;
-} else {
-  badge.className = 'badge off';
-  badgeText.textContent = 'WebMCP unavailable';
-  badge.title =
-    'No document.modelContext on this page. Open in the ChatGPT desktop in-app browser, ' +
-    'or Chrome 149+ with chrome://flags/#enable-webmcp-testing enabled. ' +
-    'The tool inspector on the right still works.';
+let registeredToolCount = 0;
+function showWebMcpStatus(status: WebMcpStatus): void {
+  registeredToolCount = status.registered;
+  if (status.available && status.registered > 0) {
+    badge.className = 'badge ok';
+    badgeText.textContent = `WebMCP · ${status.registered} tools`;
+    badge.title = `Registered ${status.registered} tools on ${status.host}`;
+  } else if (status.available) {
+    badge.className = 'badge off';
+    badgeText.textContent = 'WebMCP connected · no tools';
+    badge.title = status.reason ?? 'The browser exposed WebMCP, but tool registration failed.';
+  } else {
+    badge.className = 'badge checking';
+    badgeText.textContent = 'Waiting for WebMCP…';
+    badge.title = `${status.reason} The page will connect automatically when the host becomes available.`;
+  }
 }
-wireWebmcpTester(badge, badgeText, 'list_components', status.registered);
+watchWebMcp(TOOLS, showWebMcpStatus);
+wireWebmcpTester(badge, badgeText, 'list_components', () => registeredToolCount);
 
 /* ---------- first paint ---------- */
 
-runTool('load_preset', { name: 'led_basic' }, 'you').then(() => {
-  logEl.innerHTML = '<p class="empty">Tool calls from the agent appear here as they arrive.</p>';
-});
+suppressLogging = true;
+runTool('load_preset', { name: 'led_basic' }, 'you')
+  .finally(() => { suppressLogging = false; });
 renderInspector();
 updateChrome();
 

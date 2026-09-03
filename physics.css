@@ -210,7 +210,3 @@
 .event-entry.collision .t { color: var(--accent); }
 .event-entry.end { color: #b45309; font-weight: 600; }
 .event-entry.rest { color: var(--ok); }
-
-@media (max-width: 1100px) {
-  .activity { display: none; }
-}

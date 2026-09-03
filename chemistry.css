@@ -123,8 +123,6 @@
   border-radius: 9px; padding: .5rem .85rem; font-size: .82rem;
 }
 
-@media (max-width: 1100px) { .activity { display: none; } }
-
 /* ---- polish pass ---- */
 
 /* raised, shaded periodic-table cells */

@@ -200,9 +200,12 @@ function makeSliderRow(slider: Slider): SliderRow {
     if (result.ok) value.value = result.value.toFixed(2);
     graph.commitHistory();
   };
-  value.addEventListener('change', commitValue);
+  value.addEventListener('blur', commitValue);
   value.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') value.blur();
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      value.blur();
+    }
   });
 
   row.append(top, range, bounds);

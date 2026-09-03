@@ -96,10 +96,6 @@
   box-shadow: 0 6px 20px rgba(127,29,29,.12);
 }
 
-@media (max-width: 1100px) {
-  .activity { display: none; }
-}
-
 .sim-controls { display: inline-flex; align-items: center; gap: .5rem; }
 .sim-reset {
   border: 1px solid var(--line); background: #fff; color: var(--muted);
@@ -143,6 +139,10 @@
   display: flex; flex-direction: column;
   box-shadow: 0 -8px 24px rgba(15,23,42,.18);
   z-index: 6;
+}
+
+@media (max-width: 700px) {
+  .scope-panel { height: min(190px, 42%); }
 }
 .scope-head {
   display: flex; align-items: center; gap: .6rem;

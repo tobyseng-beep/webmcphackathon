@@ -3,7 +3,7 @@
 // agent is doing to the board.
 
 import * as graph from './store';
-import { TOOLS, registerTools } from './tools';
+import { TOOLS } from './tools';
 import { PRESETS } from './presets';
 import { initRender2D, draw as draw2D, resize2D } from './render2d';
 import { initRender3D, rebuild as rebuild3D, resize3D } from './render3d';
@@ -11,6 +11,7 @@ import { initHoverBox } from './hover';
 import { renderAll, focusLastExpression } from './ui';
 import { mustQuery } from './dom';
 import { wireWebmcpTester } from './webmcp-selftest';
+import { watchWebMcp, type WebMcpStatus } from './webmcp';
 
 const canvas2d = mustQuery<HTMLCanvasElement>('#canvas2d');
 const stage3d = mustQuery<HTMLDivElement>('#stage3d');
@@ -21,6 +22,7 @@ const hoverDot = mustQuery<HTMLDivElement>('#hover-dot');
 const logEl = mustQuery<HTMLDivElement>('#log');
 const badge = mustQuery<HTMLDivElement>('#mcp-badge');
 const badgeText = mustQuery<HTMLSpanElement>('#mcp-text');
+const startIn3D = new URLSearchParams(location.search).get('mode') === '3d';
 
 initHoverBox(hoverBox, stage, hoverDot);
 
@@ -50,6 +52,7 @@ window.addEventListener('keydown', (e) => {
 
 type CallSource = 'you' | 'agent';
 let callSource: CallSource | null = null;
+let suppressLogging = false;
 
 function logCall(name: string, args: Record<string, unknown>, source: CallSource): HTMLDivElement {
   const empty = logEl.querySelector('.empty');
@@ -84,7 +87,7 @@ for (const tool of TOOLS) {
   const inner = tool.execute;
   tool.execute = async (args) => {
     const source = callSource ?? 'agent';
-    const entry = logCall(tool.name, args, source);
+    const entry = suppressLogging ? null : logCall(tool.name, args, source);
     try {
       const result = await inner(args ?? {});
       if (
@@ -92,10 +95,14 @@ for (const tool of TOOLS) {
         typeof result === 'object' &&
         'ok' in result &&
         result.ok === false
-      ) entry.classList.add('fail');
+      ) entry?.classList.add('fail');
+      if (tool.name === 'load_preset' && result && typeof result === 'object' && 'ok' in result && result.ok !== false) {
+        const name = typeof args?.name === 'string' ? args.name : '';
+        if (name in PRESETS) presetSelect.value = name;
+      }
       return result;
     } catch (err) {
-      entry.classList.add('fail');
+      entry?.classList.add('fail');
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   };
@@ -127,6 +134,11 @@ function applyMode(): void {
   mustQuery<HTMLButtonElement>('#mode-3d').classList.toggle('active', is3d);
   mustQuery<HTMLButtonElement>('#mode-2d').setAttribute('aria-selected', String(!is3d));
   mustQuery<HTMLButtonElement>('#mode-3d').setAttribute('aria-selected', String(is3d));
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('mode') !== mode) {
+    url.searchParams.set('mode', mode);
+    history.replaceState(null, '', url);
+  }
   if (is3d) { resize3D(); rebuild3D(); } else { resize2D(); }
 }
 
@@ -160,7 +172,6 @@ for (const [name, preset] of Object.entries(PRESETS)) {
 presetSelect.addEventListener('change', async () => {
   if (!presetSelect.value) return;
   await runTool('load_preset', { name: presetSelect.value }, 'you');
-  presetSelect.value = '';
 });
 
 /* ---------- tool inspector ---------- */
@@ -214,20 +225,25 @@ mustQuery<HTMLButtonElement>('#tool-run').addEventListener('click', async () => 
 
 /* ---------- WebMCP registration ---------- */
 
-const status = registerTools();
-if (status.available) {
-  badge.className = 'badge ok';
-  badgeText.textContent = `WebMCP · ${status.registered} tools`;
-  badge.title = `Registered ${status.registered} tools on ${status.host}`;
-} else {
-  badge.className = 'badge off';
-  badgeText.textContent = 'WebMCP unavailable';
-  badge.title =
-    'No document.modelContext on this page. Open in the ChatGPT desktop in-app browser, ' +
-    'or Chrome 149+ with chrome://flags/#enable-webmcp-testing enabled. ' +
-    'The tool inspector on the right still works.';
+let registeredToolCount = 0;
+function showWebMcpStatus(status: WebMcpStatus): void {
+  registeredToolCount = status.registered;
+  if (status.available && status.registered > 0) {
+    badge.className = 'badge ok';
+    badgeText.textContent = `WebMCP · ${status.registered} tools`;
+    badge.title = `Registered ${status.registered} tools on ${status.host}`;
+  } else if (status.available) {
+    badge.className = 'badge off';
+    badgeText.textContent = 'WebMCP connected · no tools';
+    badge.title = status.reason ?? 'The browser exposed WebMCP, but tool registration failed.';
+  } else {
+    badge.className = 'badge checking';
+    badgeText.textContent = 'Waiting for WebMCP…';
+    badge.title = `${status.reason} The page will connect automatically when the host becomes available.`;
+  }
 }
-wireWebmcpTester(badge, badgeText, 'list_expressions', status.registered);
+watchWebMcp(TOOLS, showWebMcpStatus);
+wireWebmcpTester(badge, badgeText, 'list_expressions', () => registeredToolCount);
 
 /* ---------- first paint ---------- */
 
@@ -235,9 +251,8 @@ applyMode();
 
 // The menu links here as graph.html?mode=2d / ?mode=3d. Choosing the opening
 // preset is enough to set the board mode, since each preset declares its own.
-const startIn3D = new URLSearchParams(location.search).get('mode') === '3d';
-runTool('load_preset', { name: startIn3D ? 'saddle' : 'parabola_family' }, 'you').then(() => {
-  logEl.innerHTML = '<p class="empty">Tool calls from the agent appear here as they arrive.</p>';
-});
+suppressLogging = true;
+runTool('load_preset', { name: startIn3D ? 'saddle' : 'parabola_family' }, 'you')
+  .finally(() => { suppressLogging = false; });
 
 window.chalkboard = { graph, TOOLS, runTool };
