@@ -49,6 +49,9 @@ function summary(): Record<string, unknown> {
     has_ground: s.components.some((c) => c.type === 'ground'),
     warnings: sol?.warnings ?? [],
     running: s.running,
+    // Bumped by every change from either side; compare against the last value
+    // you saw to know whether the board moved under you.
+    revision: circuit.changes.revision(),
   };
 }
 
@@ -426,6 +429,24 @@ const toolDefinitions = [
       const result = circuit.showScope(visible);
       return { ...result, ...summary() };
     },
+  },
+
+  {
+    name: 'read_changes',
+    description:
+      'What has changed on the board, and who changed it. Every readback carries a `revision`; pass the last one you saw as `since` and this returns only what happened after it, oldest first. Each entry names the actor -- "user" for the student working the board directly, "agent" for a tool call -- along with the action, the part or wire it touched, and the values either side. This is how you notice that the student rewired something or turned a knob while you were explaining: watch `revision` on a cheap readback and call this when it moves. A continuous gesture such as dragging a value slider arrives as one entry spanning the drag.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: 'number', description: 'Return only changes after this revision. Omit for everything still held.' },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => ({
+      ok: true,
+      revision: circuit.changes.revision(),
+      changes: circuit.changes.since(typeof args.since === 'number' ? args.since : undefined),
+      note: 'Oldest first. Selection and hovering are not changes and are not recorded.',
+    }),
   },
 
   {

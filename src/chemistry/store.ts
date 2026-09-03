@@ -3,6 +3,7 @@
 // molecule (connected-component) formula computation.
 
 import type { Atom, Bond, BondKind, ChangeReason, ChemState, Molecule, View } from './types';
+import { createChangeLog } from '../changelog';
 import { defaultNeutrons, elementByZ, elementBySymbol, MAX_Z } from './elements';
 
 const state: ChemState = {
@@ -15,6 +16,9 @@ const state: ChemState = {
   canUndo: false,
   canRedo: false,
 };
+
+/** What changed on this board, and who changed it. */
+export const changes = createChangeLog();
 
 type Listener = (reason: ChangeReason, state: ChemState) => void;
 const listeners = new Set<Listener>();
@@ -67,12 +71,16 @@ function restore(snap: Snapshot): void {
 }
 export function undo(): { ok: boolean; error?: string } {
   if (undoStack.length === 0) return { ok: false, error: 'Nothing to undo.' };
-  redoStack.push(snapshot()); restore(undoStack.pop()!); refreshHistoryFlags(); notify('history');
+  redoStack.push(snapshot()); restore(undoStack.pop()!); refreshHistoryFlags();
+  changes.record('undid', { summary: 'the last change was undone' });
+  notify('history');
   return { ok: true };
 }
 export function redo(): { ok: boolean; error?: string } {
   if (redoStack.length === 0) return { ok: false, error: 'Nothing to redo.' };
-  undoStack.push(snapshot()); restore(redoStack.pop()!); refreshHistoryFlags(); notify('history');
+  undoStack.push(snapshot()); restore(redoStack.pop()!); refreshHistoryFlags();
+  changes.record('redid', { summary: 'the last undone change was reapplied' });
+  notify('history');
   return { ok: true };
 }
 export function beginBatch(): void {
@@ -104,6 +112,10 @@ export function addAtom(z: number, opts: AddAtomOptions = {}): { ok: boolean; id
   };
   state.atoms.push(atom);
   state.selectedId = atom.id; state.selectedBondId = null;
+  changes.record('added atom', {
+    target: atom.id, to: { protons: atom.protons, neutrons: atom.neutrons, electrons: atom.electrons },
+    summary: `${elementByZ(zi)?.symbol ?? 'atom'} ${atom.id} added`,
+  });
   const messageChanged = invalidateMessage();
   notify('atoms');
   if (messageChanged) notify('message');
@@ -114,9 +126,13 @@ export function removeAtom(id: string): { ok: boolean; error?: string } {
   const idx = state.atoms.findIndex((a) => a.id === id);
   if (idx === -1) return { ok: false, error: `No atom "${id}".` };
   pushHistory(null);
-  state.atoms.splice(idx, 1);
+  const [gone] = state.atoms.splice(idx, 1);
   state.bonds = state.bonds.filter((b) => b.a !== id && b.b !== id);
   if (state.selectedId === id) state.selectedId = null;
+  changes.record('removed atom', {
+    target: id, from: { protons: gone.protons },
+    summary: `${id} removed, along with any bonds to it`,
+  });
   const messageChanged = invalidateMessage();
   notify('atoms');
   if (messageChanged) notify('message');
@@ -131,7 +147,12 @@ function setParticle(id: string, field: 'protons' | 'neutrons' | 'electrons', va
   else v = Math.max(0, v);
   const elementChanged = field === 'protons' && atom.protons !== v;
   pushHistory(`${field}:${id}`);
+  const was = atom[field];
   atom[field] = v;
+  changes.record(`changed ${field}`, {
+    target: id, from: was, to: v, coalesce: true,
+    summary: `${id} now has ${v} ${field}`,
+  });
   const messageChanged = elementChanged && invalidateMessage();
   notify('atoms');
   if (messageChanged) notify('message');
@@ -145,8 +166,13 @@ export function moveAtom(id: string, x: number, y: number, snap = true): { ok: b
   const atom = atomById(id);
   if (!atom) return { ok: false, error: `No atom "${id}".` };
   pushHistory(`move:${id}`);
+  const wasAt = { x: atom.x, y: atom.y };
   atom.x = snap ? Math.round(x) : x;
   atom.y = snap ? Math.round(y) : y;
+  changes.record('moved atom', {
+    target: id, from: wasAt, to: { x: atom.x, y: atom.y }, coalesce: true,
+    summary: `${id} moved to (${atom.x}, ${atom.y})`,
+  });
   notify('atoms');
   return { ok: true };
 }
@@ -164,6 +190,10 @@ export function addBond(aId: string, bId: string, kind: BondKind = 'covalent', o
   const bond: Bond = { id: 'bond' + (++bondCounter), a: aId, b: bId, kind, order: kind === 'ionic' ? 1 : Math.max(1, Math.min(3, Math.round(order))) };
   state.bonds.push(bond);
   state.selectedBondId = bond.id; state.selectedId = null;
+  changes.record('bonded', {
+    target: bond.id, to: { a: aId, b: bId, kind: bond.kind, order: bond.order },
+    summary: `${aId} bonded to ${bId} (${bond.kind}, order ${bond.order})`,
+  });
   const messageChanged = invalidateMessage();
   notify('bonds');
   if (messageChanged) notify('message');
@@ -177,6 +207,10 @@ export function setBond(id: string, patch: { kind?: BondKind; order?: number }):
   if (patch.kind) bond.kind = patch.kind;
   if (patch.order !== undefined) bond.order = Math.max(1, Math.min(3, Math.round(patch.order)));
   if (bond.kind === 'ionic') bond.order = 1;
+  changes.record('changed bond', {
+    target: id, to: { kind: bond.kind, order: bond.order },
+    summary: `${id} is now ${bond.kind}, order ${bond.order}`,
+  });
   const messageChanged = invalidateMessage();
   notify('bonds');
   if (messageChanged) notify('message');
@@ -189,6 +223,7 @@ export function removeBond(id: string): { ok: boolean; error?: string } {
   pushHistory(null);
   state.bonds.splice(idx, 1);
   if (state.selectedBondId === id) state.selectedBondId = null;
+  changes.record('removed bond', { target: id, summary: `bond ${id} removed` });
   const messageChanged = invalidateMessage();
   notify('bonds');
   if (messageChanged) notify('message');
@@ -200,6 +235,7 @@ export function clearAll(): { ok: true } {
   state.atoms = []; state.bonds = [];
   state.selectedId = null; state.selectedBondId = null;
   atomCounter = 0; bondCounter = 0;
+  changes.record('cleared board', { summary: 'every atom and bond removed' });
   const messageChanged = invalidateMessage();
   notify('atoms');
   if (messageChanged) notify('message');

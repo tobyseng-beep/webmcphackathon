@@ -113,6 +113,9 @@ function summary(): Record<string, unknown> {
     object_cap: state.objectCap,
     movable_objects: movable.length,
     active_design_tool: state.tool,
+    // Bumped by every change from either side; compare against the last value
+    // you saw to know whether the sandbox moved under you.
+    revision: physics.changes.revision(),
     objects: objects.map(describeBody),
   };
   if (state.stage === 'running') {
@@ -570,6 +573,24 @@ const toolDefinitions = [
       ...summary(),
       energy: energyTotals(),
       recent_events: physics.getState().events.slice(-8),
+    }),
+  },
+
+  {
+    name: 'read_changes',
+    description:
+      'What has changed in the sandbox, and who changed it. Every readback carries a `revision`; pass the last one you saw as `since` and this returns only what happened after it, oldest first. Each entry names the actor -- "user" for the student building the scene directly, "agent" for a tool call -- along with the action and the object it touched. This is the edit history, and is different from read_events: that one reports what the *physics* did during a run (collisions, coming to rest), while this reports what a *person* did to the scene. Dragging an object into place arrives as one entry spanning the drag.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: 'number', description: 'Return only changes after this revision. Omit for everything still held.' },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => ({
+      ok: true,
+      revision: physics.changes.revision(),
+      changes: physics.changes.since(typeof args.since === 'number' ? args.since : undefined),
+      note: 'Oldest first. Selecting an object is not a change and is not recorded.',
     }),
   },
 

@@ -42,6 +42,9 @@ function summary(): Record<string, unknown> {
     molecules: chem.molecules().map((m) => ({ formula: m.formula, atoms: m.atomIds, charge: m.charge })),
     structure_valid: analysis.valid,
     structure_warnings: analysis.warnings,
+    // Bumped by every change from either side; compare against the last value
+    // you saw to know whether the board moved under you.
+    revision: chem.changes.revision(),
   };
 }
 
@@ -208,6 +211,24 @@ const toolDefinitions = [
     inputSchema: { type: 'object', properties: {} },
     execute: async () => ({ ...chem.clearAll(), ...summary() }),
   },
+  {
+    name: 'read_changes',
+    description:
+      'What has changed on the board, and who changed it. Every readback carries a `revision`; pass the last one you saw as `since` and this returns only what happened after it, oldest first. Each entry names the actor -- "user" for the student building the structure directly, "agent" for a tool call -- along with the action and the atom or bond it touched. This is how you notice that the student added an electron or broke a bond while you were explaining: watch `revision` on a cheap readback and call this when it moves.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: 'number', description: 'Return only changes after this revision. Omit for everything still held.' },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => ({
+      ok: true,
+      revision: chem.changes.revision(),
+      changes: chem.changes.since(typeof args.since === 'number' ? args.since : undefined),
+      note: 'Oldest first. Selecting an atom is not a change and is not recorded.',
+    }),
+  },
+
   {
     name: 'undo',
     description: 'Undo the last change to the board. Safe to call repeatedly to step further back.',

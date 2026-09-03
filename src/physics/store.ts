@@ -18,6 +18,7 @@ import {
 } from './engine';
 import { CATALOG, LINE_COLOR, TRACK_THICKNESS, rectShape, thickenPolyline } from './catalog';
 import { MATERIALS, frictionCoefficient } from './materials';
+import { createChangeLog } from '../changelog';
 import type {
   AppliedForce,
   ApplyMode,
@@ -69,6 +70,9 @@ let telemetryClock = 0;
 
 /** The layout as it was the instant Start was pressed, for retry. */
 let preRunSnapshot: Body[] | null = null;
+
+/** What changed in this sandbox, and who changed it. */
+export const changes = createChangeLog();
 
 type Listener = (reason: ChangeReason, state: PhysicsState) => void;
 const listeners = new Set<Listener>();
@@ -279,6 +283,10 @@ export function addObject(type: string, opts: {
   });
   state.bodies.push(body);
   state.selectedId = body.id;
+  changes.record('added object', {
+    target: body.id, to: type,
+    summary: `${entry.title.toLowerCase()} ${body.id} placed at (${body.x.toFixed(2)}, ${body.y.toFixed(2)})`,
+  });
   notify('bodies');
   return { ok: true, id: body.id, placed: type, position: { x: body.x, y: body.y }, objects_used: userBodies().length, object_cap: OBJECT_CAP };
 }
@@ -327,6 +335,10 @@ export function drawLine(points: Vec2[]): Result {
   linePaths.set(body.id, local);
   state.bodies.push(body);
   state.selectedId = body.id;
+  changes.record('drew line', {
+    target: body.id, to: { points: simplified.length, length_m: +length.toFixed(2) },
+    summary: `line ${body.id} drawn, ${length.toFixed(2)} m long`,
+  });
   notify('bodies');
   return { ok: true, id: body.id, points: simplified.length, length_m: +length.toFixed(2), objects_used: userBodies().length, object_cap: OBJECT_CAP };
 }
@@ -344,6 +356,7 @@ export function removeObject(id: string): Result {
   linePaths.delete(id);
   telemetry.delete(id);
   if (state.selectedId === id) state.selectedId = null;
+  changes.record('removed object', { target: id, summary: `${body.label.toLowerCase()} ${id} removed` });
   notify('bodies');
   return { ok: true, removed: id, objects_used: userBodies().length };
 }
@@ -359,6 +372,7 @@ export function clearAll(): Result {
   state.endReason = null;
   state.canRetry = false;
   preRunSnapshot = null;
+  changes.record('cleared box', { summary: 'every object removed' });
   notify('bodies');
   notify('stage');
   return { ok: true, cleared: true };
@@ -379,9 +393,14 @@ export function moveObject(id: string, x: number, y: number, opts: { silent?: bo
   if (!inside(x, y)) {
     return { ok: false, error: `(${x}, ${y}) is outside the box, which spans x 0…${WORLD.width} and y 0…${WORLD.height} metres.` };
   }
+  const wasAt = { x: +body.x.toFixed(3), y: +body.y.toFixed(3) };
   body.x = x;
   body.y = y;
   body.maxHeight = y;
+  changes.record('moved object', {
+    target: id, from: wasAt, to: { x: +x.toFixed(3), y: +y.toFixed(3) }, coalesce: true,
+    summary: `${id} moved to (${x.toFixed(2)}, ${y.toFixed(2)})`,
+  });
   if (!opts.silent) notify('bodies');
   return { ok: true, id, position: { x, y } };
 }
@@ -393,6 +412,9 @@ export function setAngle(id: string, degrees: number): Result {
   if (!body) return { ok: false, error: `No object with id "${id}".` };
   if (body.wall) return { ok: false, error: 'The box walls are fixed.' };
   body.angle = (degrees * Math.PI) / 180;
+  changes.record('rotated object', {
+    target: id, to: degrees, coalesce: true, summary: `${id} rotated to ${degrees}°`,
+  });
   notify('bodies');
   return { ok: true, id, angle_deg: degrees };
 }
@@ -433,6 +455,12 @@ export function setProperty(id: string, props: {
     if (entry) body.shapes = entry.build(body.width, body.height, body.radius);
   }
   computeMass(body);
+  changes.record('changed property', {
+    target: id,
+    to: { mass_kg: body.mass, restitution: body.restitution, material: body.material },
+    coalesce: true,
+    summary: `${id} now ${body.mass} kg, bounciness ${body.restitution}, ${body.material}`,
+  });
   notify('bodies');
   return {
     ok: true,
@@ -454,6 +482,9 @@ export function setFriction(on: boolean): Result {
   const guard = requireDesign();
   if (guard) return { ok: false, error: guard };
   state.friction = on;
+  changes.record('changed friction', {
+    to: on, summary: `friction switched ${on ? 'on' : 'off'}`,
+  });
   notify('bodies');
   return { ok: true, friction: state.friction };
 }
@@ -481,6 +512,10 @@ export function addForce(id: string, fx: number, fy: number, mode: ApplyMode, du
     duration: mode === 'continuous' ? clamp(duration, 0.05, MAX_FORCE_SECONDS) : 0,
   };
   body.forces.push(force);
+  changes.record('added force', {
+    target: id, to: { fx, fy, mode, duration_s: force.duration },
+    summary: `force (${fx}, ${fy}) ${mode === 'start' ? 'as a kick' : `held ${force.duration}s`} on ${id}`,
+  });
   notify('bodies');
   return {
     ok: true,
@@ -531,6 +566,10 @@ export function setStartVelocity(id: string, vx: number, vy: number, mode: Apply
     duration: mode === 'continuous' ? clamp(duration, 0.05, MAX_FORCE_SECONDS) : 0,
   };
   body.velocity = spec;
+  changes.record('set velocity', {
+    target: id, to: { vx, vy, mode, duration_s: spec.duration },
+    summary: `${id} starts at (${vx}, ${vy}) m/s`,
+  });
   notify('bodies');
   return { ok: true, id, mode, vx, vy, duration_s: spec.duration, speed_m_s: +Math.hypot(vx, vy).toFixed(3) };
 }
@@ -549,6 +588,9 @@ export function setGravity(g: number): Result {
   const guard = requireDesign();
   if (guard) return { ok: false, error: guard };
   state.gravity = clamp(g, 0, 50);
+  changes.record('changed gravity', {
+    to: state.gravity, coalesce: true, summary: `gravity set to ${state.gravity} m/s²`,
+  });
   notify('bodies');
   return { ok: true, gravity_m_s2: state.gravity };
 }
@@ -641,6 +683,7 @@ export function startSimulation(): Result {
   sampleTelemetry();
   state.stage = 'running';
   lastFrame = performance.now();
+  changes.record('started run', { summary: 'the simulation started' });
   notify('stage');
   return { ok: true, stage: state.stage, movable_objects: movable.length, gravity_m_s2: state.gravity };
 }
@@ -648,6 +691,7 @@ export function startSimulation(): Result {
 export function pauseSimulation(): Result {
   if (state.stage !== 'running') return { ok: false, error: `Nothing to pause — the sandbox is in the "${state.stage}" stage.` };
   state.stage = 'paused';
+  changes.record('paused run', { summary: `the simulation was paused at ${state.time.toFixed(2)} s` });
   notify('stage');
   return { ok: true, stage: state.stage, time_s: +state.time.toFixed(3) };
 }
@@ -656,6 +700,7 @@ export function resumeSimulation(): Result {
   if (state.stage !== 'paused') return { ok: false, error: `Nothing to resume — the sandbox is in the "${state.stage}" stage.` };
   state.stage = 'running';
   lastFrame = performance.now();
+  changes.record('resumed run', { summary: 'the simulation resumed' });
   notify('stage');
   return { ok: true, stage: state.stage, time_s: +state.time.toFixed(3) };
 }
@@ -666,6 +711,7 @@ export function endSimulation(reason = 'You ended the run.'): Result {
   }
   state.stage = 'ended';
   state.endReason = reason;
+  changes.record('ended run', { to: reason, summary: `the run ended: ${reason}` });
   pushEvent({ t: state.time, kind: 'end', text: reason });
   notify('stage');
   return { ok: true, stage: state.stage, reason, time_s: +state.time.toFixed(3) };
@@ -684,6 +730,7 @@ export function retrySimulation(): Result {
   state.endReason = null;
   state.events = [];
   telemetry.clear();
+  changes.record('retried run', { summary: 'the layout was restored to how it was before the last run' });
   notify('bodies');
   notify('stage');
   return { ok: true, stage: state.stage, restored_objects: userBodies().length };

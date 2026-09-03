@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { CATALOG, pinNames } from './components';
 import { solve } from './solver';
+import { createChangeLog } from '../changelog';
 
 const LED_COLORS: LedColor[] = ['red', 'green', 'blue', 'yellow', 'white'];
 
@@ -105,6 +106,7 @@ export function undo(): { ok: boolean } {
   redoStack.push(snapshot());
   restoreSnapshot(undoStack.pop()!);
   refreshHistoryFlags();
+  changes.record('undid', { summary: 'the last change was undone' });
   notify('history');
   return { ok: true };
 }
@@ -114,6 +116,7 @@ export function redo(): { ok: boolean } {
   undoStack.push(snapshot());
   restoreSnapshot(redoStack.pop()!);
   refreshHistoryFlags();
+  changes.record('redid', { summary: 'the last undone change was reapplied' });
   notify('history');
   return { ok: true };
 }
@@ -130,6 +133,9 @@ export function endBatch(): void {
   refreshHistoryFlags();
   notify('history');
 }
+
+/** What changed on this board, and who changed it. */
+export const changes = createChangeLog();
 
 type Listener = (reason: ChangeReason, state: CircuitState) => void;
 const listeners = new Set<Listener>();
@@ -341,6 +347,9 @@ export function addComponent(type: ComponentType, opts: AddOptions = {}): { ok: 
   state.components.push(component);
   state.selectedId = id;
   state.selectedWireId = null;
+  changes.record('added component', {
+    target: id, to: type, summary: `${type} ${id} added`,
+  });
   notify('components');
   resolve();
   return { ok: true, id, pins: pinNames(type) };
@@ -363,6 +372,7 @@ export function removeComponent(id: string): { ok: boolean; error?: string } {
   // Drop any wires that referenced this component's pins.
   state.wires = state.wires.filter((w) => !w.from.startsWith(`${id}.`) && !w.to.startsWith(`${id}.`));
   if (state.selectedId === id) state.selectedId = null;
+  changes.record('removed component', { target: id, summary: `${id} removed` });
   notify('components');
   resolve();
   return { ok: true };
@@ -372,8 +382,13 @@ export function moveComponent(id: string, x: number, y: number, snap = true): { 
   const c = componentById(id);
   if (!c) return { ok: false, error: `No component with id "${id}".` };
   record(`move:${id}`);
+  const wasAt = { x: c.x, y: c.y };
   c.x = snap ? Math.round(x) : x;
   c.y = snap ? Math.round(y) : y;
+  changes.record('moved component', {
+    target: id, from: wasAt, to: { x: c.x, y: c.y }, coalesce: true,
+    summary: `${id} moved to (${c.x}, ${c.y})`,
+  });
   notify('components');
   resolve();
   return { ok: true };
@@ -385,6 +400,9 @@ export function rotateComponent(id: string, rotation?: Rotation): { ok: boolean;
   record(null);
   if (rotation !== undefined) c.rotation = (((rotation % 360) + 360) % 360) as Rotation;
   else c.rotation = ((c.rotation + 90) % 360) as Rotation;
+  changes.record('rotated component', {
+    target: id, to: c.rotation, summary: `${id} rotated to ${c.rotation}°`,
+  });
   notify('components');
   resolve();
   return { ok: true, rotation: c.rotation };
@@ -397,7 +415,12 @@ export function setValue(id: string, value: number): { ok: boolean; error?: stri
     return { ok: false, error: `${c.type} "${id}" has no numeric value to set.` };
   }
   record(`value:${id}`);
+  const wasValue = c.value;
   c.value = clampValue(c.type, value);
+  changes.record('changed value', {
+    target: id, from: wasValue, to: c.value, coalesce: true,
+    summary: `${id} set to ${c.value}${CATALOG[c.type].unit}`,
+  });
   notify('components');
   resolve();
   return { ok: true, value: c.value };
@@ -408,7 +431,11 @@ export function setColor(id: string, color: LedColor): { ok: boolean; error?: st
   if (!c || c.type !== 'led') return { ok: false, error: `No LED with id "${id}".` };
   if (!LED_COLORS.includes(color)) return { ok: false, error: `Unknown LED colour "${color}".` };
   record(null);
+  const wasColour = c.color;
   c.color = color;
+  changes.record('changed LED colour', {
+    target: id, from: wasColour, to: color, summary: `${id} changed to ${color}`,
+  });
   notify('components');
   resolve();
   return { ok: true };
@@ -418,7 +445,12 @@ export function setWiper(id: string, wiper: number): { ok: boolean; error?: stri
   const c = componentById(id);
   if (!c || c.type !== 'potentiometer') return { ok: false, error: `No potentiometer with id "${id}".` };
   record(`wiper:${id}`);
+  const wasWiper = c.wiper;
   c.wiper = Math.min(1, Math.max(0, wiper));
+  changes.record('moved wiper', {
+    target: id, from: +wasWiper.toFixed(3), to: +c.wiper.toFixed(3), coalesce: true,
+    summary: `${id} wiper moved to ${(c.wiper * 100).toFixed(0)}%`,
+  });
   notify('components');
   resolve();
   return { ok: true, wiper: c.wiper };
@@ -428,7 +460,12 @@ export function setFrequency(id: string, freq: number): { ok: boolean; error?: s
   const c = componentById(id);
   if (!c || c.type !== 'acsource') return { ok: false, error: `No AC source with id "${id}".` };
   record(`freq:${id}`);
+  const wasFreq = c.freq;
   c.freq = Math.min(1000, Math.max(0.01, freq));
+  changes.record('changed frequency', {
+    target: id, from: wasFreq, to: c.freq, coalesce: true,
+    summary: `${id} set to ${c.freq} Hz`,
+  });
   notify('components');
   resolve();
   return { ok: true, freq: c.freq };
@@ -439,6 +476,9 @@ export function toggleSwitch(id: string, closed?: boolean): { ok: boolean; error
   if (!c || c.type !== 'switch') return { ok: false, error: `No switch with id "${id}".` };
   record(null);
   c.closed = closed ?? !c.closed;
+  changes.record(c.closed ? 'closed switch' : 'opened switch', {
+    target: id, to: c.closed, summary: `${id} ${c.closed ? 'closed' : 'opened'}`,
+  });
   notify('components');
   resolve();
   return { ok: true, closed: c.closed };
@@ -466,6 +506,9 @@ export function connect(from: string, to: string): { ok: boolean; error?: string
   record(null);
   const id = `w${++wireCounter}`;
   state.wires.push({ id, from, to });
+  changes.record('connected', {
+    target: id, to: { from, to }, summary: `${from} wired to ${to}`,
+  });
   notify('wires');
   resolve();
   return { ok: true, wireId: id };
@@ -478,6 +521,7 @@ export function disconnect(a: string, b: string): { ok: boolean; error?: string 
   if (kept.length === state.wires.length) return { ok: false, error: `No wire between ${a} and ${b}.` };
   record(null);
   state.wires = kept;
+  changes.record('disconnected', { from: { from: a, to: b }, summary: `${a} disconnected from ${b}` });
   notify('wires');
   resolve();
   return { ok: true };
@@ -489,6 +533,7 @@ export function removeWire(wireId: string): { ok: boolean; error?: string } {
   record(null);
   state.wires = kept;
   if (state.selectedWireId === wireId) state.selectedWireId = null;
+  changes.record('disconnected', { target: wireId, summary: `wire ${wireId} removed` });
   notify('wires');
   resolve();
   return { ok: true };
@@ -506,6 +551,7 @@ export function clearAll(): { ok: true } {
   simTime = 0;
   counters.clear();
   wireCounter = 0;
+  changes.record('cleared board', { summary: 'every component and wire removed' });
   notify('components');
   resolve();
   return { ok: true };
@@ -514,6 +560,7 @@ export function clearAll(): { ok: true } {
 export function clearWires(): { ok: true } {
   if (state.wires.length > 0) record(null);
   state.wires = [];
+  changes.record('cleared wires', { summary: 'every wire removed, parts left in place' });
   notify('wires');
   resolve();
   return { ok: true };
@@ -534,6 +581,11 @@ export function setSelectedWire(id: string | null): void {
 }
 
 export function setRunning(running: boolean): void {
+  if (state.running !== running) {
+    changes.record(running ? 'resumed simulation' : 'paused simulation', {
+      to: running, summary: `simulation ${running ? 'resumed' : 'paused'}`,
+    });
+  }
   state.running = running;
   if (running) resolve();
   notify('running');

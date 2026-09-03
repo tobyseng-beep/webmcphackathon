@@ -94,7 +94,14 @@ for (const tool of TOOLS) {
     const source = callSource ?? 'agent';
     const entry = suppressLogging ? null : logCall(tool.name, args, source);
     try {
-      const result = await inner(args ?? {});
+      // Attribute every mutation this call makes. A WebMCP agent calls
+      // execute() directly rather than going through runTool, so this wrapper
+      // is the only place that sees every caller. Anything mutating outside a
+      // tool call is the student's own hands, which is the store's default.
+      const result = await graph.changes.as(
+        source === 'you' ? 'user' : 'agent',
+        () => inner(args ?? {}),
+      );
       if (
         result &&
         typeof result === 'object' &&

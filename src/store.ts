@@ -5,6 +5,7 @@
 import * as math from 'mathjs';
 import type { MathNode, SymbolNode } from 'mathjs';
 import { normalize, splitEquation } from './normalize';
+import { createChangeLog } from './changelog';
 import type {
   Annotation,
   BoardMode,
@@ -45,6 +46,9 @@ interface RunningAnimation {
   finish: (note?: string) => void;
 }
 const animations = new Map<string, RunningAnimation>();
+
+/** What changed on this board, and who changed it. */
+export const changes = createChangeLog();
 
 function notify(reason: MutationReason): void {
   for (const fn of listeners) fn(reason, state);
@@ -114,6 +118,7 @@ export function undo(): Result {
   redoStack.push(historySnapshot());
   restoreHistory(undoStack.pop()!);
   refreshHistoryFlags();
+  changes.record('undid', { summary: 'the last change was undone' });
   notify('history');
   return { ok: true };
 }
@@ -123,6 +128,7 @@ export function redo(): Result {
   undoStack.push(historySnapshot());
   restoreHistory(redoStack.pop()!);
   refreshHistoryFlags();
+  changes.record('redid', { summary: 'the last undone change was reapplied' });
   notify('history');
   return { ok: true };
 }
@@ -145,7 +151,12 @@ export function setColor(id: string, color: string): Result<{ id: string; color:
   const expr = state.expressions.find((e) => e.id === id);
   if (!expr) return { ok: false, error: `No expression with id "${id}".` };
   pushHistory(`color:${id}`);
+  const wasColor = expr.color;
   expr.color = color;
+  changes.record('recoloured expression', {
+    target: id, from: wasColor, to: color, coalesce: true,
+    summary: `${id} recoloured to ${color}`,
+  });
   notify('expressions');
   return { ok: true, id, color };
 }
@@ -155,6 +166,10 @@ export function setVisible(id: string, visible: boolean): Result<{ id: string; v
   if (!expr) return { ok: false, error: `No expression with id "${id}".` };
   pushHistory(null);
   expr.visible = visible;
+  changes.record(visible ? 'showed expression' : 'hid expression', {
+    target: id, to: visible,
+    summary: `${id} ${visible ? 'shown' : 'hidden'}`,
+  });
   notify('expressions');
   return { ok: true, id, visible };
 }
@@ -304,6 +319,14 @@ export function upsert(id: string | null, patch: ExpressionPatch = {}): Result<{
 
   const newSliders = syncSlidersToExpressions();
 
+  changes.record(existing ? 'edited expression' : 'added expression', {
+    target: targetId,
+    ...(existing ? { from: existing.latex } : {}),
+    to: latex,
+    summary: existing
+      ? `${targetId} changed from "${existing.latex}" to "${latex}"`
+      : `${targetId} "${latex}" added`,
+  });
   notify('expressions');
 
   if (record.error) {
@@ -318,6 +341,10 @@ export function remove(id: string): Result<{ removed: { id: string; latex: strin
   pushHistory(null);
   const [gone] = state.expressions.splice(idx, 1);
   syncSlidersToExpressions();
+  changes.record('removed expression', {
+    target: gone.id, from: gone.latex,
+    summary: `${gone.id} "${gone.latex}" removed`,
+  });
   notify('expressions');
   return { ok: true, removed: { id: gone.id, latex: gone.latex } };
 }
@@ -327,6 +354,7 @@ export function clearAll(): Result {
   state.expressions = [];
   state.sliders = [];
   state.annotations = [];
+  changes.record('cleared board', { summary: 'every expression, slider and annotation removed' });
   notify('expressions');
   return { ok: true };
 }
@@ -375,7 +403,13 @@ export function defineSlider(name: string, spec: SliderSpec = {}, quiet = false)
   if (existing) Object.assign(existing, slider);
   else state.sliders.push(slider);
 
-  if (!quiet) notify('sliders');
+  if (!quiet) {
+    changes.record(existing ? 'redefined slider' : 'added slider', {
+      target: name, to: { min: slider.min, max: slider.max, step: slider.step, value: slider.value },
+      summary: `slider ${name} ${existing ? 'redefined' : 'added'} over ${slider.min}…${slider.max}`,
+    });
+    notify('sliders');
+  }
   return { ok: true, slider: { ...slider } };
 }
 
@@ -386,7 +420,14 @@ export function setSlider(name: string, value: number): Result<{ name: string; v
   }
   const clamped = Math.min(slider.max, Math.max(slider.min, Number(value)));
   pushHistory(`slider:${name}`);
+  const wasValue = slider.value;
   slider.value = clamped;
+  // Dragging fires continuously; coalescing keeps the span of the drag rather
+  // than a thousand entries a hundredth apart.
+  changes.record('moved slider', {
+    target: name, from: +wasValue.toFixed(4), to: +clamped.toFixed(4), coalesce: true,
+    summary: `slider ${name} moved to ${+clamped.toFixed(4)}`,
+  });
   notify('sliders');
   return { ok: true, name, value: clamped, clamped: clamped !== Number(value) };
 }
@@ -456,6 +497,12 @@ export function setViewport(patch: Partial<Viewport>): Result<{ viewport: Viewpo
     return { ok: false, error: 'Viewport requires xmin < xmax and ymin < ymax.' };
   }
   state.viewport = v;
+  // Panning and zooming fire per frame, so this coalesces like a slider drag.
+  changes.record('moved viewport', {
+    to: { xmin: +v.xmin.toFixed(3), xmax: +v.xmax.toFixed(3), ymin: +v.ymin.toFixed(3), ymax: +v.ymax.toFixed(3) },
+    coalesce: true,
+    summary: `view moved to x ${+v.xmin.toFixed(2)}…${+v.xmax.toFixed(2)}, y ${+v.ymin.toFixed(2)}…${+v.ymax.toFixed(2)}`,
+  });
   notify('viewport');
   return { ok: true, viewport: { ...v } };
 }
@@ -465,18 +512,31 @@ export function setCamera(patch: Partial<CameraState>): Result<{ camera: CameraS
   c.phi = Math.min(179, Math.max(1, c.phi));
   c.distance = Math.min(200, Math.max(2, c.distance));
   state.camera = c;
+  changes.record('moved camera', {
+    to: { theta: +c.theta.toFixed(1), phi: +c.phi.toFixed(1), distance: +c.distance.toFixed(1) },
+    coalesce: true,
+    summary: `camera orbited to ${+c.theta.toFixed(0)}°, ${+c.phi.toFixed(0)}°`,
+  });
   notify('camera');
   return { ok: true, camera: { ...c } };
 }
 
 export function setSnapToCurve(enabled: boolean): Result<{ snapToCurve: boolean }> {
   state.snapToCurve = Boolean(enabled);
+  changes.record('changed snapping', {
+    target: 'to_curve', to: state.snapToCurve,
+    summary: `curve snapping turned ${state.snapToCurve ? 'on' : 'off'}`,
+  });
   notify('settings');
   return { ok: true, snapToCurve: state.snapToCurve };
 }
 
 export function setSnapping(enabled: boolean): Result<{ snapping: boolean }> {
   state.snapping = Boolean(enabled);
+  changes.record('changed snapping', {
+    target: 'to_grid', to: state.snapping,
+    summary: `grid snapping turned ${state.snapping ? 'on' : 'off'}`,
+  });
   notify('settings');
   return { ok: true, snapping: state.snapping };
 }
@@ -503,6 +563,7 @@ export function setMode(mode: BoardMode): Result<{ mode: BoardMode }> {
     };
   }
   state.mode = mode;
+  changes.record('changed mode', { to: mode, summary: `board switched to ${mode.toUpperCase()}` });
   notify('mode');
   return { ok: true, mode };
 }
@@ -511,6 +572,10 @@ export function annotate({ x, y, z, text }: { x: number; y: number; z?: number; 
   const note: Annotation = { id: 'a' + (++idCounter), x: Number(x), y: Number(y), z: z == null ? null : Number(z), text: String(text) };
   pushHistory(null);
   state.annotations.push(note);
+  changes.record('added annotation', {
+    target: note.id, to: { x: note.x, y: note.y, text: note.text },
+    summary: `label "${note.text}" pinned at (${note.x}, ${note.y})`,
+  });
   notify('annotations');
   return { ok: true, annotation: note };
 }

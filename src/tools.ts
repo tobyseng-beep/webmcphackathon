@@ -31,6 +31,9 @@ const summary = () => {
     // The student can change these from the board; report them so a reading
     // that has been snapped is never mistaken for the raw cursor position.
     snapping: { to_curve: s.snapToCurve, to_grid: s.snapping },
+    // Bumped by every change from either side. Compare it against the last
+    // value you saw to know whether the board moved under you.
+    revision: graph.changes.revision(),
   };
 };
 
@@ -258,6 +261,24 @@ const toolDefinitions = [
       required: ['latex'],
     },
     execute: async ({ latex, at }: { latex: string; at?: NumericScope }) => graph.evaluateAt(latex, at ?? {}),
+  },
+
+  {
+    name: 'read_changes',
+    description:
+      'What has changed on the board, and who changed it. Every readback carries a `revision`; pass the last one you saw as `since` and this returns only what happened after it, oldest first. Each entry says whether the actor was the "user" or the "agent" (you), what the action was, which expression or slider it touched, and the values before and after. This is how you answer "what did I just do?" or notice that the student edited something while you were talking: poll a cheap readback, compare `revision`, and call this when it has moved. Continuous gestures such as dragging a slider or panning arrive as one entry spanning the whole drag rather than hundreds. Hovering and selecting are not changes and are not recorded.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: 'number', description: 'Return only changes after this revision. Omit for everything still held (the last 200).' },
+      },
+    },
+    execute: async ({ since }: { since?: number }) => ({
+      ok: true,
+      revision: graph.changes.revision(),
+      changes: graph.changes.since(typeof since === 'number' ? since : undefined),
+      note: 'Oldest first. actor "user" is the student acting on the board directly; "agent" is a tool call.',
+    }),
   },
 
   {

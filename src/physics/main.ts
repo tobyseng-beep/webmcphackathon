@@ -68,7 +68,13 @@ for (const tool of TOOLS) {
     const source = callSource ?? 'agent';
     const entry = suppressLogging ? null : logCall(tool.name, args, source);
     try {
-      const result = await inner(args ?? {});
+      // Attribute every mutation this call makes. A WebMCP agent calls
+      // execute() directly rather than going through runTool, so this is the
+      // only place that sees every caller.
+      const result = await physics.changes.as(
+        source === 'you' ? 'user' : 'agent',
+        () => inner(args ?? {}),
+      );
       if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
         entry?.classList.add('fail');
       }

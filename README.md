@@ -42,7 +42,7 @@ To let an agent drive it, open the live URL in either:
 - **ChatGPT desktop**, in the in-app browser, or
 - **Chrome 149+** with `chrome://flags/#enable-webmcp-testing` enabled.
 
-The badge in the top right shows how many tools the current board registered (19 on the
+The badge in the top right shows how many tools the current board registered (20 on the
 grapher). If the browser attaches WebMCP after page load, the badge connects
 automatically. Every tool call the agent makes appears in the *Agent activity* panel.
 
@@ -58,7 +58,7 @@ with JSON arguments — same code path the agent uses.
 
 ## How WebMCP is implemented
 
-The grapher's 19 tools are registered on `document.modelContext`
+The grapher's 20 tools are registered on `document.modelContext`
 ([`src/tools.ts`](src/tools.ts)); the other sandboxes register their own toolsets:
 
 ```ts
@@ -121,6 +121,7 @@ the motion is the whole point.
 | `evaluate` | Compute a number without plotting, using live slider values |
 | `find_features` | **Roots, extrema, asymptotes, crossings with any curve kind; saddle/min/max on surfaces** |
 | `set_snapping` | Read or change the board's curve/grid snapping, which the student also controls |
+| `read_changes` | **What changed since a revision, and whether the student or the agent did it** |
 | `annotate` | Pin a label to a coordinate with a leader line |
 | `clear` | Clear annotations, or reset the board |
 | `set_mode` | Switch between the 2D grapher and 3D surface plotter |
