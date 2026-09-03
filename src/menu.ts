@@ -67,10 +67,10 @@ const CATALOG: Record<string, CatalogEntry> = {
     about: 'Build beginner DC circuits from batteries, resistors, LEDs, lamps and switches. Place parts, wire them pin to pin, flip switches, and read the live current and voltage. Supports the full circuit toolset once open.',
   },
   physics: {
-    href: null,
+    href: 'physics.html',
     title: 'Physics sandbox',
-    ready: false,
-    about: 'Not built yet. For kinematics and oscillation today, open the 2D grapher and load the projectile, damped_oscillator or wave_beats lesson.',
+    ready: true,
+    about: 'A 2D mechanics box with three stages: place ramps, tracks, balls and blocks while they float, run the simulation under gravity and normal forces with friction as an optional switch (never any air resistance), then read back position, velocity, forces, energy and every collision. Supports the full physics toolset once open.',
   },
   chemistry: {
     href: 'chemistry.html',

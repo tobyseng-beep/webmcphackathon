@@ -1,0 +1,216 @@
+/* Physics-page styles. The shared shell (topbar, panels, activity, badge,
+   inspector, log) comes from styles.css; this adds the library palettes, the
+   stage control bar that sits above the top-right of the box, and the
+   selected-object inspector. Colours reuse the shared theme tokens. */
+
+/* ---- library palettes ---- */
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .45rem;
+  padding: 0 .9rem .5rem;
+}
+.palette {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .45rem;
+  padding: 0 .9rem .4rem;
+}
+.palette-hint {
+  font-size: .74rem; color: var(--muted);
+  padding: 0 .9rem .9rem; margin: 0;
+}
+
+.part, .tool-btn {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  border: 1px solid var(--line); background: #fff;
+  border-radius: 10px; padding: .5rem .3rem .4rem; cursor: pointer;
+  color: var(--ink); touch-action: none;
+  transition: border-color .12s ease, transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.part:hover, .tool-btn:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(45,112,179,.12);
+}
+.part svg, .tool-btn svg { width: 44px; height: 28px; }
+.part span, .tool-btn span { font-size: .74rem; font-weight: 600; }
+
+.tool-btn.active {
+  background: #eff6ff;
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---- stage: control bar above the box, then the box ---- */
+
+.stage {
+  position: relative;
+  background: #fbfcfe;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sim-bar {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .55rem .9rem;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+.sim-buttons { margin-left: auto; display: inline-flex; gap: .4rem; }
+
+.sim-btn {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font: inherit; font-size: .82rem; font-weight: 600;
+  padding: .34rem .72rem; border-radius: 8px; cursor: pointer;
+  white-space: nowrap;
+}
+.sim-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.sim-btn:disabled { opacity: .38; cursor: default; }
+.sim-btn.go { color: var(--ok); border-color: #bbf7d0; background: #f0fdf4; }
+.sim-btn.go:hover:not(:disabled) { border-color: var(--ok); }
+.sim-btn.danger { color: var(--bad); }
+.sim-btn.danger:hover:not(:disabled) { border-color: var(--bad); background: #fef2f2; color: var(--bad); }
+
+.stage-chip {
+  display: inline-flex; align-items: center; gap: .45rem;
+  font-size: .8rem; font-weight: 700; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: .22rem .7rem;
+  white-space: nowrap; flex: none;
+}
+.stage-chip .stage-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.stage-chip.running { color: var(--ok); border-color: #bbf7d0; background: #f0fdf4; }
+.stage-chip.running .stage-dot { background: var(--ok); animation: stage-pulse 1.6s infinite; }
+.stage-chip.paused { color: #b45309; border-color: #fed7aa; background: #fffbeb; }
+.stage-chip.paused .stage-dot { background: #b45309; }
+.stage-chip.ended { color: #b45309; border-color: #fed7aa; background: #fffbeb; }
+.stage-chip.ended .stage-dot { background: #b45309; }
+@keyframes stage-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(21,128,61,.45); }
+  70% { box-shadow: 0 0 0 6px rgba(21,128,61,0); }
+  100% { box-shadow: 0 0 0 0 rgba(21,128,61,0); }
+}
+
+.stage-count { font-size: .78rem; color: var(--muted); white-space: nowrap; flex: none; }
+
+/* Friction switch: off is the sandbox's idealised default, so "on" is the
+   state that gets the colour. */
+.friction-btn {
+  display: inline-flex; align-items: center; gap: .45rem;
+  border: 1px solid var(--line); background: #fff; color: var(--muted);
+  font: inherit; font-size: .8rem; font-weight: 600;
+  padding: .28rem .7rem; border-radius: 999px; cursor: pointer;
+  white-space: nowrap; flex: none;
+}
+.friction-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
+.friction-btn:disabled { opacity: .45; cursor: default; }
+.friction-btn .friction-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--line); border: 1px solid #cbd5e1;
+}
+.friction-btn.on { color: #7c2d12; border-color: #fed7aa; background: #fffbeb; }
+.friction-btn.on .friction-dot { background: #ea580c; border-color: #ea580c; }
+
+/* The button row is the thing that gives way when the stage gets narrow. */
+.sim-bar { flex-wrap: wrap; }
+
+.box-wrap { position: relative; flex: 1; min-height: 0; }
+#physics-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.stage.tool-draw #physics-canvas { cursor: crosshair; }
+.stage.tool-erase #physics-canvas { cursor: not-allowed; }
+.stage.tool-force #physics-canvas,
+.stage.tool-velocity #physics-canvas { cursor: cell; }
+
+.stage-banner {
+  position: absolute; left: 50%; bottom: 1.1rem; transform: translateX(-50%);
+  max-width: 40rem; text-align: center;
+  background: #fffbeb; border: 1px solid #fed7aa; color: #7c2d12;
+  border-radius: 9px; padding: .55rem .85rem; font-size: .82rem;
+  box-shadow: 0 6px 20px rgba(124,45,18,.12);
+}
+
+/* ---- selected-object inspector ---- */
+
+.inspector-panel { padding: 0 .9rem 1rem; }
+.insp-title {
+  display: flex; align-items: baseline; gap: .5rem;
+  font-weight: 700; margin: .2rem 0 .6rem;
+}
+.insp-title .insp-id {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .78rem; color: var(--muted);
+}
+.insp-row { margin: .5rem 0; }
+.insp-row label {
+  display: block; font-size: .72rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: .22rem;
+}
+.insp-value { display: flex; align-items: center; gap: .45rem; }
+.insp-value input[type="number"] { width: 5.4rem; }
+.insp-value .unit { color: var(--muted); font-size: .82rem; }
+.insp-pair { display: flex; gap: .5rem; }
+.insp-pair > div { flex: 1; }
+
+.insp-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem; }
+.insp-actions button {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font: inherit; font-size: .78rem; padding: .3rem .65rem; border-radius: 7px; cursor: pointer;
+}
+.insp-actions button:hover { border-color: var(--accent); }
+.insp-actions button.danger { color: var(--bad); }
+.insp-actions button.danger:hover { border-color: var(--bad); background: #fef2f2; }
+
+.insp-reading {
+  margin-top: .8rem; padding: .55rem .65rem;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .76rem;
+  color: var(--ink); line-height: 1.65;
+}
+.insp-reading .k { color: var(--muted); }
+.insp-reading .warn { color: var(--bad); }
+
+.insp-vectors { margin-top: .6rem; }
+.vector-chip {
+  display: flex; align-items: center; gap: .4rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .73rem;
+  border: 1px solid var(--line); border-radius: 7px;
+  padding: .25rem .45rem; margin-bottom: .3rem;
+}
+.vector-chip.force { border-color: #fecaca; background: #fef2f2; color: #7f1d1d; }
+.vector-chip.velocity { border-color: #bbf7d0; background: #f0fdf4; color: #14532d; }
+.vector-chip button {
+  margin-left: auto; border: 0; background: none; cursor: pointer;
+  color: inherit; opacity: .6; font-size: .8rem; line-height: 1; padding: 0;
+}
+.vector-chip button:hover { opacity: 1; }
+
+.insp-note { font-size: .74rem; color: var(--muted); margin: .5rem 0 0; }
+
+/* ---- run log ---- */
+
+.event-log {
+  padding: 0 .9rem .8rem;
+  max-height: 12rem; overflow-y: auto;
+  border-bottom: 1px solid var(--line);
+}
+.event-entry {
+  font-size: .76rem; line-height: 1.5;
+  padding: .28rem 0; border-bottom: 1px dashed var(--line);
+}
+.event-entry:last-child { border-bottom: 0; }
+.event-entry .t {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted); margin-right: .4rem;
+}
+.event-entry.collision .t { color: var(--accent); }
+.event-entry.end { color: #b45309; font-weight: 600; }
+.event-entry.rest { color: var(--ok); }
+
+@media (max-width: 1100px) {
+  .activity { display: none; }
+}

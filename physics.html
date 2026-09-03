@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smarterboard — an agent-drivable physics sandbox</title>
+<meta name="description" content="A 2D physics sandbox an AI agent can build and run through WebMCP: it places ramps and balls, adds forces and velocities, runs the simulation and reads back position, velocity, forces and energy while it explains.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22g%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%231e3a8a%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232563eb%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22url%28%23g%29%22%2F%3E%3Ccircle%20cx%3D%2222%22%20cy%3D%2218%22%20r%3D%228%22%20fill%3D%22%23fff%22%2F%3E%3Cpath%20d%3D%22M10%2050%20L54%2050%20M14%2050%20L46%2026%22%20stroke%3D%22%23fff%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="physics.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a class="mark" href="index.html" title="Back to the menu" aria-label="Back to the menu">⚙</a>
+    <div>
+      <h1>Smarterboard</h1>
+      <p>a physics box your agent can build and run</p>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <label class="preset-wrap">
+      <span class="sr-only">Load a starter scene</span>
+      <select id="preset-select">
+        <option value="">Load a starter scene…</option>
+      </select>
+    </label>
+    <div id="mcp-badge" class="badge checking" title="WebMCP availability">
+      <span class="dot"></span><span id="mcp-text">checking…</span>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <div class="panel-head"><h2>Design tools</h2></div>
+      <div id="design-tools" class="tool-grid"></div>
+      <p id="tool-hint" class="palette-hint"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Blocks</h2></div>
+      <div id="block-palette" class="palette"></div>
+      <p class="palette-hint">Fixed scenery. Blocks never move, and they bear weight just like the floor.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Objects</h2></div>
+      <div id="object-palette" class="palette"></div>
+      <p class="palette-hint">These are what actually move once the run starts.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Selected</h2></div>
+      <div id="inspector-panel" class="inspector-panel">
+        <p class="empty">Select an object in the box to edit it. Press <code>Delete</code> to remove it.</p>
+      </div>
+    </section>
+  </aside>
+
+  <section class="stage">
+    <div class="sim-bar">
+      <div class="stage-chip" id="stage-chip">
+        <span class="stage-dot"></span><span id="stage-label">Pre-simulation</span>
+      </div>
+      <div class="stage-count" id="object-count">0 / 15 objects</div>
+      <button id="friction-toggle" class="friction-btn" type="button" title="Switch Coulomb friction on or off. The coefficient comes from the materials of the two surfaces in contact.">
+        <span class="friction-dot"></span><span id="friction-label">Friction: off</span>
+      </button>
+      <div class="sim-buttons">
+        <button id="btn-start" class="sim-btn go" title="Switch gravity on and run the scene">▶ Start</button>
+        <button id="btn-pause" class="sim-btn" title="Freeze the run where it is, without ending it">❙❙ Pause</button>
+        <button id="btn-end" class="sim-btn" title="End the run now and freeze everything in place">■ End</button>
+        <button id="btn-retry" class="sim-btn" title="Put everything back where it was before the last run">↺ Retry</button>
+        <button id="btn-reset" class="sim-btn danger" title="Empty the box completely">✕ Reset</button>
+      </div>
+    </div>
+
+    <div class="box-wrap">
+      <canvas id="physics-canvas"></canvas>
+      <div id="empty-hint" class="empty-hint">
+        <p>Ask your agent something like:</p>
+        <ul>
+          <li>“Drop a ball from 8 metres and tell me how fast it lands.”</li>
+          <li>“Build a ramp and slide a 2 kg block down it.”</li>
+          <li>“Launch a ball at 9 m/s at 55° and check the range against the equation.”</li>
+          <li>“Run it, then retry with double the mass and tell me what changed.”</li>
+          <li>“Turn friction on and show me which surfaces slide and which stick.”</li>
+        </ul>
+      </div>
+      <div id="stage-banner" class="stage-banner" hidden></div>
+    </div>
+  </section>
+
+  <aside class="activity">
+    <div class="panel-head">
+      <h2>Agent activity</h2>
+      <button id="clear-log" class="ghost" title="Clear the log">clear</button>
+    </div>
+    <div id="log" class="log">
+      <p class="empty">Tool calls from the agent appear here as they arrive.</p>
+    </div>
+
+    <div class="panel-head"><h2>Run log</h2></div>
+    <div id="event-log" class="event-log">
+      <p class="empty">Collisions and the reason a run ended appear here.</p>
+    </div>
+
+    <details class="inspector">
+      <summary>Tool inspector <span class="hint">(run a tool by hand)</span></summary>
+      <label class="sr-only" for="tool-select">Tool</label>
+      <select id="tool-select"></select>
+      <p id="tool-desc" class="tool-desc"></p>
+      <textarea id="tool-args" spellcheck="false" rows="4">{}</textarea>
+      <button id="tool-run" class="primary">Run tool</button>
+      <pre id="tool-result" class="tool-result"></pre>
+    </details>
+  </aside>
+</main>
+
+<script type="module" src="/src/physics/main.ts"></script>
+</body>
+</html>

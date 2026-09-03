@@ -11,6 +11,7 @@ The pages and their tools:
 | 2D / 3D grapher | `/graph.html` | 17 | `list_expressions` |
 | Circuit sandbox | `/circuit.html` | 22 | `list_components` |
 | Chemistry sandbox | `/chemistry.html` | 15 | `list_atoms` |
+| Physics sandbox | `/physics.html` | 27 | `describe_sandbox` |
 | Explore menu | `/index.html` | 2 | `list_learning_tools` |
 
 ---
@@ -64,6 +65,10 @@ Open the console (⌥⌘J / Ctrl-Shift-J) to see the full report.
    - Circuit: *“Build a circuit that lights a red LED from a 9 V battery, safely, then plot the current.”*
    - Chemistry: *“Build a water molecule and explain the covalent bonds,”* or
      *“Make a sodium ion and a chloride ion, then bond them.”*
+   - Physics: *“Drop a ball from 8 m and tell me how fast it lands,”*
+     *“Build a ramp, slide a 2 kg block down it, and check the acceleration against
+     g·sinθ,”* *“Run it, then retry with double the mass and tell me what changed,”* or
+     *“Turn friction on and show me which surfaces slide on a 27° ramp and which stick.”*
 
 The thing worth watching is whether it reaches for the *right* tool (e.g.
 `animate_slider` over `set_slider`, `bond` with the correct kind) — that is what

@@ -27,9 +27,8 @@ declares its tools, and whatever agent the student already uses can drive them.
 > Testing the WebMCP tools (self-test, Chrome flag, ChatGPT desktop, Tool inspector): see [TESTING.md](TESTING.md).
 
 The live URL opens a menu of learning tools. **2D** and **3D** open the grapher
-(`graph.html?mode=2d` / `?mode=3d`); **Circuits** and **Physics** are marked coming soon
-because they are not built yet, and say which 2D lesson covers the topic today. The
-grapher's logo links back to the menu.
+(`graph.html?mode=2d` / `?mode=3d`); **Circuits**, **Physics** and **Chemistry** open
+their own sandboxes. Every page's logo links back to the menu.
 
 The menu registers two tools of its own — `list_learning_tools` and `open_tool` — so an
 agent can open the right board before the student has clicked anything.
@@ -131,6 +130,118 @@ edge of a domain, and the sign of the Hessian determinant to call a saddle a sad
 the agent says *"the vertex is at (1, −4)"* because it measured it, and `annotate` puts
 the label exactly there.
 
+## The physics sandbox
+
+`physics.html` is a 2D mechanics box with the three stages a problem actually has.
+
+**Pre-simulation.** Nothing acts on anything. Objects float exactly where they are put,
+so a scene can be built in any order — drop the ball in mid-air first and slide the ramp
+underneath it afterwards. This is the only stage in which anything can be edited.
+
+**Simulation.** Gravity and normal (contact) forces switch on and the floating objects
+fall. **Friction is a switch, off by default** (see below); there is never any air
+resistance. A run ends in exactly three ways, per the spec: you end it, every movable
+object has been at rest for 5 seconds, or 30 seconds elapse.
+
+**Post-simulation.** Everything freezes where it stopped and the readings stay
+queryable. **Retry** restores the layout — positions, forces and velocities — exactly as
+it was the instant the last run started, which is what makes "change one thing and run it
+again" an honest comparison. **Reset** empties the box.
+
+The library has the three sections the brief asks for:
+
+| Section | Contents |
+|---|---|
+| Design tools | select, draw line, erase, force, velocity |
+| Blocks (fixed, bear weight) | ramp, platform, wall, block, quarter-pipe, coaster dip, loop |
+| Objects (move) | ball, cube, cart, plank |
+
+During the design stage the forces and velocities you have set up stay drawn on their
+objects, because that is the scene you are about to run. Once the run starts, the live
+velocity readout is **hover-only** — a box full of moving objects would otherwise be a
+thicket of arrows — so point at an object to get its arrow and speed, or select it to
+keep a full readout (position, velocity, energies, live forces) in the sidebar.
+
+Drawn lines bear weight exactly like the floor, so an agent can build a slope the block
+library does not have. The floor and both side walls are solid supports; the top is open,
+so a launched object leaves the view and falls back in rather than hitting a lid. At most
+**15 objects** can be in the box at once.
+
+### Friction
+
+The **Friction** button above the box turns Coulomb friction on and off for the whole
+sandbox. Off is the idealised case a first course starts with; on is the next lesson. It
+can only be changed in the pre-simulation stage, so a run stays reproducible and
+**Retry** replays it faithfully — which makes "run it frictionless, then retry with
+friction on" a one-click comparison.
+
+Friction is a property of the **pair** of surfaces in contact, not of one object. Every
+object carries a material, and the coefficient comes from a table
+([`src/physics/materials.ts`](src/physics/materials.ts)). The floor, the walls and the
+blocks are concrete; balls are rubber, cubes and planks wood, carts and tracks steel.
+
+| μ | rubber | wood | steel | concrete | ice |
+|---|---|---|---|---|---|
+| **rubber** | 1.10 | 0.75 | 0.65 | 0.90 | 0.15 |
+| **wood** | 0.75 | 0.35 | 0.30 | 0.55 | 0.08 |
+| **steel** | 0.65 | 0.30 | 0.50 | 0.45 | 0.03 |
+| **concrete** | 0.90 | 0.55 | 0.45 | 0.70 | 0.10 |
+| **ice** | 0.15 | 0.08 | 0.03 | 0.10 | 0.03 |
+
+The solver clamps each contact's tangential impulse to the Coulomb cone (|jt| ≤ μ·jn),
+so static friction is not special-cased — a block simply stays put until tanθ exceeds μ,
+and starts sliding when it does. Two simplifications worth stating to a student: there is
+one coefficient per pair rather than separate static and kinetic values, and there is no
+rolling resistance, so a ball that ends up rolling rather than sliding keeps rolling.
+
+The solver is impulse-based rigid-body dynamics over convex polygons and circles, written
+from scratch in [`src/physics/engine.ts`](src/physics/engine.ts) — no physics library. It
+was checked against the closed-form answers:
+
+| Check | Predicted | Measured |
+|---|---|---|
+| Free fall from 8 m, impact speed | 12.251 m/s | 12.262 m/s |
+| Free fall from 8 m, time | 1.249 s | 1.250 s |
+| Block on a 29.4° frictionless ramp, `a = g sinθ` | 4.809 m/s² | 4.810 m/s² |
+| 9 N on 3 kg, `a = F/m` (Δv between t = 1 s and t = 2 s) | 3.000 m/s² | 3.000 m/s² |
+| Momentum through a 2 kg / 1 kg head-on collision | conserved | conserved exactly |
+| Rebound height, `h′ = e²h` (e = 0.2 / 0.5 / 0.85) | 0.59 / 1.99 / 5.15 m | 0.58 / 2.00 / 5.19 m |
+| Loop-the-loop threshold `v = √(5gr)` | 8.11 m/s | clears the top at 8.5 m/s |
+| Sliding on the flat, `a = −μg` (ice, μ = 0.10) | −0.981 m/s² | −0.981 m/s² |
+| The same, at 3 kg and at 20 kg | mass-independent | −0.981 m/s² both |
+| Block on a 26.6° ramp, μ = 0.90 > tanθ = 0.50 | does not slide | does not slide |
+| Block on the same ramp, `a = g(sinθ − μcosθ)` (ice) | 3.51 m/s² | 3.51 m/s² |
+
+Flat surfaces and free flight are exact. Curved tracks are tessellated into many short
+straight segments, so a body riding one loses a few percent of its energy per pass at the
+joints — the tool descriptions say so, so an agent teaches the trend there rather than the
+last decimal place.
+
+### The physics tools
+
+| Tool | What it does |
+|---|---|
+| `describe_sandbox` | The rules, the stage, the units, the box, what is and is not modelled |
+| `list_library` | The three library sections with sizes, masses and what each shape is for |
+| `list_objects` / `get_object` | Every object, or one in depth with its motion history |
+| `add_object` / `draw_line` | Place a block or object; draw an arbitrary weight-bearing line |
+| `move_object` / `rotate_object` / `set_property` | Position, angle, mass, bounciness, size, material |
+| `set_friction` | **Turn Coulomb friction on or off for the whole sandbox** |
+| `list_friction_pairs` | **The μ table for every material pair, and each object's material** |
+| `apply_force` | **A kick at t=0, or a force held for up to 10 s** |
+| `set_velocity` | **A starting velocity, or one held for up to 10 s** |
+| `clear_motion` / `remove_object` / `set_gravity` | Undo the motion setup, delete, change g |
+| `start` / `pause` / `resume` / `end` / `retry` / `reset_simulation` | The stage machine |
+| `read_simulation` | **Positions, velocities, forces, energies and momentum totals** |
+| `read_telemetry` | The recorded motion of one object, sampled 20×/second |
+| `read_events` | **Every collision with its impact speed, and why the run ended** |
+| `load_preset` | A ready-made scene with a note on what it demonstrates |
+
+`read_events` and `read_telemetry` are what let the agent narrate instead of guess. It
+says *"it hit the floor at 12.4 m/s, then at 6.1, then at 3.0"* because the run recorded
+each impact, and `read_simulation` reports kinetic and potential energy side by side so a
+claim about conservation is a measurement rather than an assertion.
+
 ## Architecture
 
 One rule: **every state change goes through the mutation layer in
@@ -151,7 +262,22 @@ src/render2d.ts   canvas renderer; pan/zoom writes back through setViewport
 src/render3d.ts   three.js surfaces; mouse orbit writes back through setCamera
 src/ui.ts         keyed DOM rows, updated in place so animation stays smooth
 src/main.ts       wiring, activity log, tool inspector, registration
+
+physics.html            the physics sandbox
+src/physics/types.ts    body, shape, stage, event and telemetry types
+src/physics/engine.ts   the solver: contacts, impulses, integration (no DOM)
+src/physics/catalog.ts  the library: design tools, blocks, objects, shape builders
+src/physics/materials.ts the friction table: mu for every pair of surface materials
+src/physics/store.ts    state + every mutation + the three-stage machine + the clock
+src/physics/render.ts   canvas renderer and pointer tools (draw, erase, force, velocity)
+src/physics/presets.ts  ready-made scenes with teaching notes
+src/physics/tools.ts    WebMCP tool definitions; each execute() calls into store.ts
+src/physics/main.ts     wiring, library palettes, inspector, stage buttons, registration
 ```
+
+`engine.ts` has no DOM dependency and `store.advance(seconds)` is separate from the
+frame loop, so the simulation can be stepped deterministically without a browser clock —
+which is how the numbers in the table above were measured.
 
 The renderers are read-only consumers of state. Dragging the graph and calling
 `set_viewport` are the same operation, so the agent can always read back where the
