@@ -19,6 +19,7 @@ import {
 import { CATALOG, LINE_COLOR, TRACK_THICKNESS, rectShape, thickenPolyline } from './catalog';
 import { MATERIALS, frictionCoefficient } from './materials';
 import { createChangeLog } from '../changelog';
+import { badNumbers } from '../numbers';
 import type {
   AppliedForce,
   ApplyMode,
@@ -251,6 +252,9 @@ export function addObject(type: string, opts: {
   const guard = requireDesign();
   if (guard) return { ok: false, error: guard };
 
+  const bad = badNumbers({ x: opts.x, y: opts.y, angle: opts.angle, width: opts.width,
+    height: opts.height, radius: opts.radius, mass: opts.mass, restitution: opts.restitution });
+  if (bad) return { ok: false, error: bad };
   const entry = CATALOG[type];
   if (!entry) {
     return { ok: false, error: `Unknown type "${type}". Call list_library to see what can be placed.` };
@@ -390,6 +394,8 @@ export function moveObject(id: string, x: number, y: number, opts: { silent?: bo
   const body = bodyById(id);
   if (!body) return { ok: false, error: `No object with id "${id}".` };
   if (body.wall) return { ok: false, error: 'The box walls are fixed.' };
+  const badMove = badNumbers({ x, y });
+  if (badMove) return { ok: false, error: badMove };
   if (!inside(x, y)) {
     return { ok: false, error: `(${x}, ${y}) is outside the box, which spans x 0…${WORLD.width} and y 0…${WORLD.height} metres.` };
   }
@@ -411,6 +417,8 @@ export function setAngle(id: string, degrees: number): Result {
   const body = bodyById(id);
   if (!body) return { ok: false, error: `No object with id "${id}".` };
   if (body.wall) return { ok: false, error: 'The box walls are fixed.' };
+  const badAngle = badNumbers({ angle: degrees });
+  if (badAngle) return { ok: false, error: badAngle };
   body.angle = (degrees * Math.PI) / 180;
   changes.record('rotated object', {
     target: id, to: degrees, coalesce: true, summary: `${id} rotated to ${degrees}°`,
@@ -432,6 +440,9 @@ export function setProperty(id: string, props: {
   const body = bodyById(id);
   if (!body) return { ok: false, error: `No object with id "${id}".` };
   if (body.wall) return { ok: false, error: 'The box walls are fixed.' };
+  const badProp = badNumbers({ mass: props.mass, restitution: props.restitution,
+    width: props.width, height: props.height, radius: props.radius });
+  if (badProp) return { ok: false, error: badProp };
 
   if (props.material !== undefined) {
     if (!MATERIALS.includes(props.material)) {
@@ -504,6 +515,8 @@ export function addForce(id: string, fx: number, fy: number, mode: ApplyMode, du
   if (body.kind !== 'dynamic') {
     return { ok: false, error: `${body.label} (${id}) is fixed scenery. Forces only do anything to movable objects — see list_library.` };
   }
+  const badForce = badNumbers({ fx, fy, duration });
+  if (badForce) return { ok: false, error: badForce };
   const force: AppliedForce = {
     id: nextId('f'),
     fx,
@@ -559,6 +572,8 @@ export function setStartVelocity(id: string, vx: number, vy: number, mode: Apply
   if (body.kind !== 'dynamic') {
     return { ok: false, error: `${body.label} (${id}) is fixed scenery and cannot move.` };
   }
+  const badVel = badNumbers({ vx, vy, duration });
+  if (badVel) return { ok: false, error: badVel };
   const spec: VelocitySpec = {
     vx,
     vy,
@@ -587,6 +602,8 @@ export function clearVelocity(id: string): Result {
 export function setGravity(g: number): Result {
   const guard = requireDesign();
   if (guard) return { ok: false, error: guard };
+  const badG = badNumbers({ gravity: g });
+  if (badG) return { ok: false, error: badG };
   state.gravity = clamp(g, 0, 50);
   changes.record('changed gravity', {
     to: state.gravity, coalesce: true, summary: `gravity set to ${state.gravity} m/s²`,

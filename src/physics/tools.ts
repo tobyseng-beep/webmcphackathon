@@ -586,10 +586,15 @@ const toolDefinitions = [
         since: { type: 'number', description: 'Return only changes after this revision. Omit for everything still held.' },
       },
     },
-    execute: async (args: Record<string, unknown>) => ({
+    execute: async (args: Record<string, unknown>) => (
+      // Silently returning everything when `since` is unreadable would answer a
+      // different question from the one that was asked.
+      args.since !== undefined && !Number.isFinite(Number(args.since))
+        ? { ok: false, error: `since must be a number; got ${JSON.stringify(args.since)}.` }
+        : {
       ok: true,
       revision: physics.changes.revision(),
-      changes: physics.changes.since(typeof args.since === 'number' ? args.since : undefined),
+      changes: physics.changes.since(args.since === undefined ? undefined : Number(args.since)),
       note: 'Oldest first. Selecting an object is not a change and is not recorded.',
     }),
   },

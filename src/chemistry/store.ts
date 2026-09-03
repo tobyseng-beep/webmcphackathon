@@ -4,6 +4,7 @@
 
 import type { Atom, Bond, BondKind, ChangeReason, ChemState, Molecule, View } from './types';
 import { createChangeLog } from '../changelog';
+import { badNumbers } from '../numbers';
 import { defaultNeutrons, elementByZ, elementBySymbol, MAX_Z } from './elements';
 
 const state: ChemState = {
@@ -25,7 +26,15 @@ const listeners = new Set<Listener>();
 let atomCounter = 0;
 let bondCounter = 0;
 
-function notify(reason: ChangeReason): void { for (const fn of listeners) fn(reason, state); }
+function notify(reason: ChangeReason): void {
+  // A listener that throws must not abort the mutation part-way through, nor
+  // strand a promise that resolves after notifying (animate_slider did exactly
+  // that: a bad value made a renderer throw, and the agent waited forever).
+  for (const fn of listeners) {
+    try { fn(reason, state); }
+    catch (err) { console.error('[chemistry] listener failed:', err); }
+  }
+}
 export function subscribe(fn: Listener): () => void { listeners.add(fn); return () => listeners.delete(fn); }
 export function getState(): ChemState { return state; }
 export function atomById(id: string): Atom | undefined { return state.atoms.find((a) => a.id === id); }
@@ -99,6 +108,8 @@ function autoPlace(): { x: number; y: number } {
 export interface AddAtomOptions { x?: number; y?: number; neutrons?: number; electrons?: number; }
 
 export function addAtom(z: number, opts: AddAtomOptions = {}): { ok: boolean; id?: string; error?: string } {
+  const bad = badNumbers({ atomic_number: z, neutrons: opts.neutrons, electrons: opts.electrons, x: opts.x, y: opts.y });
+  if (bad) return { ok: false, error: bad };
   const zi = Math.round(z);
   if (!elementByZ(zi)) return { ok: false, error: `No element with atomic number ${z}. Valid range is 1 to ${MAX_Z}.` };
   pushHistory(null);
@@ -170,6 +181,8 @@ export function setElectrons(id: string, n: number) { return setParticle(id, 'el
 export function moveAtom(id: string, x: number, y: number, snap = true): { ok: boolean; error?: string } {
   const atom = atomById(id);
   if (!atom) return { ok: false, error: `No atom "${id}".` };
+  const bad = badNumbers({ x, y });
+  if (bad) return { ok: false, error: bad };
   pushHistory(`move:${id}`);
   const wasAt = { x: atom.x, y: atom.y };
   atom.x = snap ? Math.round(x) : x;
@@ -208,6 +221,10 @@ export function addBond(aId: string, bId: string, kind: BondKind = 'covalent', o
 export function setBond(id: string, patch: { kind?: BondKind; order?: number }): { ok: boolean; error?: string } {
   const bond = bondById(id);
   if (!bond) return { ok: false, error: `No bond "${id}".` };
+  // A NaN order does not stay local: it propagates into every bonded atom's
+  // electron count and formal charge, so the whole structure reads as null.
+  const bad = badNumbers({ order: patch.order });
+  if (bad) return { ok: false, error: bad };
   pushHistory(null);
   if (patch.kind) bond.kind = patch.kind;
   if (patch.order !== undefined) bond.order = Math.max(1, Math.min(3, Math.round(patch.order)));

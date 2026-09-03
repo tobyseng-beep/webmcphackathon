@@ -17,6 +17,7 @@ import type {
 import { CATALOG, pinNames } from './components';
 import { solve } from './solver';
 import { createChangeLog } from '../changelog';
+import { badNumbers } from '../numbers';
 
 const LED_COLORS: LedColor[] = ['red', 'green', 'blue', 'yellow', 'white'];
 
@@ -150,7 +151,13 @@ const ID_PREFIX: Record<ComponentType, string> = {
 };
 
 function notify(reason: ChangeReason): void {
-  for (const fn of listeners) fn(reason, state);
+  // A listener that throws must not abort the mutation part-way through, nor
+  // strand a promise that resolves after notifying (animate_slider did exactly
+  // that: a bad value made a renderer throw, and the agent waited forever).
+  for (const fn of listeners) {
+    try { fn(reason, state); }
+    catch (err) { console.error('[circuit] listener failed:', err); }
+  }
 }
 
 export function subscribe(fn: Listener): () => void {
@@ -323,6 +330,8 @@ export function addComponent(type: ComponentType, opts: AddOptions = {}): { ok: 
   if (!CATALOG[type]) {
     return { ok: false, error: `Unknown component type "${type}". Valid types: ${Object.keys(CATALOG).join(', ')}.` };
   }
+  const bad = badNumbers({ value: opts.value, x: opts.x, y: opts.y, rotation: opts.rotation });
+  if (bad) return { ok: false, error: bad };
   const entry = CATALOG[type];
   const id = nextId(type);
   const place = opts.x !== undefined && opts.y !== undefined ? { x: opts.x, y: opts.y } : autoPlace();
@@ -381,6 +390,8 @@ export function removeComponent(id: string): { ok: boolean; error?: string } {
 export function moveComponent(id: string, x: number, y: number, snap = true): { ok: boolean; error?: string } {
   const c = componentById(id);
   if (!c) return { ok: false, error: `No component with id "${id}".` };
+  const bad = badNumbers({ x, y });
+  if (bad) return { ok: false, error: bad };
   record(`move:${id}`);
   const wasAt = { x: c.x, y: c.y };
   c.x = snap ? Math.round(x) : x;
@@ -397,6 +408,9 @@ export function moveComponent(id: string, x: number, y: number, snap = true): { 
 export function rotateComponent(id: string, rotation?: Rotation): { ok: boolean; error?: string; rotation?: Rotation } {
   const c = componentById(id);
   if (!c) return { ok: false, error: `No component with id "${id}".` };
+  if (rotation !== undefined && ![0, 90, 180, 270].includes(Number(rotation))) {
+    return { ok: false, error: `rotation must be 0, 90, 180 or 270; got ${JSON.stringify(rotation)}.` };
+  }
   record(null);
   if (rotation !== undefined) c.rotation = (((rotation % 360) + 360) % 360) as Rotation;
   else c.rotation = ((c.rotation + 90) % 360) as Rotation;
@@ -414,6 +428,8 @@ export function setValue(id: string, value: number): { ok: boolean; error?: stri
   if (CATALOG[c.type].unit === '') {
     return { ok: false, error: `${c.type} "${id}" has no numeric value to set.` };
   }
+  const badValue = badNumbers({ value });
+  if (badValue) return { ok: false, error: badValue };
   record(`value:${id}`);
   const wasValue = c.value;
   c.value = clampValue(c.type, value);
@@ -444,6 +460,8 @@ export function setColor(id: string, color: LedColor): { ok: boolean; error?: st
 export function setWiper(id: string, wiper: number): { ok: boolean; error?: string; wiper?: number } {
   const c = componentById(id);
   if (!c || c.type !== 'potentiometer') return { ok: false, error: `No potentiometer with id "${id}".` };
+  const bad = badNumbers({ wiper });
+  if (bad) return { ok: false, error: bad };
   record(`wiper:${id}`);
   const wasWiper = c.wiper;
   c.wiper = Math.min(1, Math.max(0, wiper));
@@ -459,6 +477,8 @@ export function setWiper(id: string, wiper: number): { ok: boolean; error?: stri
 export function setFrequency(id: string, freq: number): { ok: boolean; error?: string; freq?: number } {
   const c = componentById(id);
   if (!c || c.type !== 'acsource') return { ok: false, error: `No AC source with id "${id}".` };
+  const bad = badNumbers({ frequency: freq });
+  if (bad) return { ok: false, error: bad };
   record(`freq:${id}`);
   const wasFreq = c.freq;
   c.freq = Math.min(1000, Math.max(0.01, freq));

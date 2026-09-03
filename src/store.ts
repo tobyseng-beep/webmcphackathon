@@ -6,6 +6,7 @@ import * as math from 'mathjs';
 import type { MathNode, SymbolNode } from 'mathjs';
 import { normalize, splitEquation } from './normalize';
 import { createChangeLog } from './changelog';
+import { badNumbers } from './numbers';
 import type {
   Annotation,
   BoardMode,
@@ -51,7 +52,13 @@ const animations = new Map<string, RunningAnimation>();
 export const changes = createChangeLog();
 
 function notify(reason: MutationReason): void {
-  for (const fn of listeners) fn(reason, state);
+  // A listener that throws must not abort the mutation part-way through, nor
+  // strand a promise that resolves after notifying (animate_slider did exactly
+  // that: a bad value made a renderer throw, and the agent waited forever).
+  for (const fn of listeners) {
+    try { fn(reason, state); }
+    catch (err) { console.error('[graph] listener failed:', err); }
+  }
 }
 
 // ---- undo / redo ----
@@ -388,6 +395,11 @@ export function defineSlider(name: string, spec: SliderSpec = {}, quiet = false)
   if (!parameterNames().includes(name)) {
     return { ok: false, error: `No expression currently uses parameter "${name}". Add it to an expression first.` };
   }
+  for (const [key, value] of Object.entries(spec)) {
+    if (value !== undefined && !Number.isFinite(Number(value))) {
+      return { ok: false, error: `Slider ${key} must be a number; got ${JSON.stringify(value)}.` };
+    }
+  }
   const existing = state.sliders.find((s) => s.name === name);
   const slider = {
     name,
@@ -446,6 +458,12 @@ export function animateSlider(name: string, from: number | undefined, to: number
   const slider = state.sliders.find((s) => s.name === name);
   if (!slider) {
     return Promise.resolve({ ok: false, error: `No slider named "${name}". Use define_slider first.` });
+  }
+  if (!Number.isFinite(Number(to)) || (from !== undefined && !Number.isFinite(Number(from)))) {
+    return Promise.resolve({
+      ok: false,
+      error: `animate_slider needs numeric endpoints; got from=${JSON.stringify(from)}, to=${JSON.stringify(to)}.`,
+    });
   }
   const prior = animations.get(name);
   if (prior) prior.finish('Superseded by a newer animate_slider call on the same slider.');
@@ -580,6 +598,8 @@ export function setMode(mode: BoardMode): Result<{ mode: BoardMode }> {
 }
 
 export function annotate({ x, y, z, text }: { x: number; y: number; z?: number; text: string }): Result<{ annotation: Annotation }> {
+  const bad = badNumbers({ x, y, z });
+  if (bad) return { ok: false, error: bad };
   const note: Annotation = { id: 'a' + (++idCounter), x: Number(x), y: Number(y), z: z == null ? null : Number(z), text: String(text) };
   pushHistory(null);
   state.annotations.push(note);

@@ -273,10 +273,15 @@ const toolDefinitions = [
         since: { type: 'number', description: 'Return only changes after this revision. Omit for everything still held (the last 200).' },
       },
     },
-    execute: async ({ since }: { since?: number }) => ({
+    execute: async ({ since }: { since?: number }) => (
+      // Silently returning everything when `since` is unreadable would answer a
+      // different question from the one that was asked.
+      since !== undefined && !Number.isFinite(Number(since))
+        ? { ok: false, error: `since must be a number; got ${JSON.stringify(since)}.` }
+        : {
       ok: true,
       revision: graph.changes.revision(),
-      changes: graph.changes.since(typeof since === 'number' ? since : undefined),
+      changes: graph.changes.since(since === undefined ? undefined : Number(since)),
       note: 'Oldest first. actor "user" is the student acting on the board directly; "agent" is a tool call.',
     }),
   },

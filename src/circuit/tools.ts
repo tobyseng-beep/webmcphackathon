@@ -441,10 +441,15 @@ const toolDefinitions = [
         since: { type: 'number', description: 'Return only changes after this revision. Omit for everything still held.' },
       },
     },
-    execute: async (args: Record<string, unknown>) => ({
+    execute: async (args: Record<string, unknown>) => (
+      // Silently returning everything when `since` is unreadable would answer a
+      // different question from the one that was asked.
+      args.since !== undefined && !Number.isFinite(Number(args.since))
+        ? { ok: false, error: `since must be a number; got ${JSON.stringify(args.since)}.` }
+        : {
       ok: true,
       revision: circuit.changes.revision(),
-      changes: circuit.changes.since(typeof args.since === 'number' ? args.since : undefined),
+      changes: circuit.changes.since(args.since === undefined ? undefined : Number(args.since)),
       note: 'Oldest first. Selection and hovering are not changes and are not recorded.',
     }),
   },
