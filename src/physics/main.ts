@@ -12,7 +12,7 @@ import * as render from './render';
 import { canvasHit, initPhysicsRender } from './render';
 import { mustQuery } from '../dom';
 import { wireWebmcpTester } from '../webmcp-selftest';
-import { watchWebMcp, type WebMcpStatus } from '../webmcp';
+import { watchWebMcp, renderBadge, type WebMcpStatus } from '../webmcp';
 import type { Body, Material, ToolId } from './types';
 
 const canvas = mustQuery<HTMLCanvasElement>('#physics-canvas');
@@ -66,6 +66,7 @@ for (const tool of TOOLS) {
   const inner = tool.execute;
   tool.execute = async (args) => {
     const source = callSource ?? 'agent';
+    if (source === 'agent') { agentCallCount++; refreshBadge(); }
     const entry = suppressLogging ? null : logCall(tool.name, args, source);
     try {
       // Attribute every mutation this call makes. A WebMCP agent calls
@@ -556,21 +557,18 @@ mustQuery<HTMLButtonElement>('#tool-run').addEventListener('click', async () => 
 /* ---------- WebMCP registration ---------- */
 
 let registeredToolCount = 0;
+// Registration proves the page offered its tools; only a real call proves an
+// agent is on the other end, so the badge reports these.
+let agentCallCount = 0;
+let lastStatus: WebMcpStatus = { available: false, registered: 0, host: null, waiting: true };
 function showWebMcpStatus(status: WebMcpStatus): void {
   registeredToolCount = status.registered;
-  if (status.available && status.registered > 0) {
-    badge.className = 'badge ok';
-    badgeText.textContent = `WebMCP · ${status.registered} tools`;
-    badge.title = `Registered ${status.registered} tools on ${status.host}`;
-  } else if (status.available) {
-    badge.className = 'badge off';
-    badgeText.textContent = 'WebMCP connected · no tools';
-    badge.title = status.reason ?? 'The browser exposed WebMCP, but tool registration failed.';
-  } else {
-    badge.className = 'badge checking';
-    badgeText.textContent = 'Waiting for WebMCP…';
-    badge.title = `${status.reason} The page will connect automatically when the host becomes available.`;
-  }
+  lastStatus = status;
+  renderBadge(badge, badgeText, status, agentCallCount);
+}
+/** Repaint after an agent call, so the badge can report live traffic. */
+function refreshBadge(): void {
+  renderBadge(badge, badgeText, lastStatus, agentCallCount);
 }
 watchWebMcp(TOOLS, showWebMcpStatus);
 wireWebmcpTester(badge, badgeText, 'describe_sandbox', () => registeredToolCount);
