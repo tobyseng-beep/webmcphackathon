@@ -142,6 +142,11 @@ export function removeAtom(id: string): { ok: boolean; error?: string } {
 function setParticle(id: string, field: 'protons' | 'neutrons' | 'electrons', value: number): { ok: boolean; error?: string } {
   const atom = atomById(id);
   if (!atom) return { ok: false, error: `No atom "${id}".` };
+  // A missing or non-numeric count used to sail through as NaN and leave the
+  // atom with a null particle count -- broken, and reported as ok:true.
+  if (!Number.isFinite(value)) {
+    return { ok: false, error: `${field} must be a number; got ${JSON.stringify(value)}.` };
+  }
   let v = Math.round(value);
   if (field === 'protons') { if (v < 1) v = 1; if (v > MAX_Z) v = MAX_Z; }
   else v = Math.max(0, v);

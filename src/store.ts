@@ -418,6 +418,9 @@ export function setSlider(name: string, value: number): Result<{ name: string; v
   if (!slider) {
     return { ok: false, error: `No slider named "${name}". Existing sliders: ${state.sliders.map((s) => s.name).join(', ') || '(none)'}. Use define_slider to create it.` };
   }
+  if (!Number.isFinite(Number(value))) {
+    return { ok: false, error: `Slider value must be a number; got ${JSON.stringify(value)}.` };
+  }
   const clamped = Math.min(slider.max, Math.max(slider.min, Number(value)));
   pushHistory(`slider:${name}`);
   const wasValue = slider.value;
@@ -492,6 +495,14 @@ export function animateSlider(name: string, from: number | undefined, to: number
 }
 
 export function setViewport(patch: Partial<Viewport>): Result<{ viewport: Viewport }> {
+  // Reject non-numbers before they reach the state. NaN fails every comparison
+  // below, so without this a bad bound would sail past the ordering check and
+  // leave the board with an unusable viewport.
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined && !Number.isFinite(value)) {
+      return { ok: false, error: `Viewport ${key} must be a number; got ${JSON.stringify(value)}.` };
+    }
+  }
   const v = { ...state.viewport, ...patch };
   if (v.xmin >= v.xmax || v.ymin >= v.ymax) {
     return { ok: false, error: 'Viewport requires xmin < xmax and ymin < ymax.' };
