@@ -2,13 +2,14 @@
 // agent gets real coordinates to reason about instead of guessing from the
 // shape of the algebra.
 
-import { getState, scope, byId } from './store';
+import { getState, scope, byId, pointCoordinates } from './store';
+import { curveIntersections } from './snap';
 import type { Expression, NumericScope, Result } from './types';
 
 type Sample = (value: number) => number;
 type FeatureType =
   | 'root' | 'asymptote' | 'minimum' | 'maximum' | 'y_intercept'
-  | 'intersection' | 'saddle';
+  | 'intersection' | 'saddle' | 'point';
 interface Feature {
   type: FeatureType;
   x: number;
@@ -41,13 +42,6 @@ function bisect(f: Sample, a: number, b: number, iters = 80): number {
     if ((fa < 0) === (fm < 0)) { a = m; fa = fm; } else { b = m; }
   }
   return (a + b) / 2;
-}
-
-// A sign change across a pole looks like a root but isn't. Reject crossings
-// where the function is large on both sides of a tiny bracket.
-function isPole(f: Sample, x: number, h: number): boolean {
-  const l = Math.abs(f(x - h)), r = Math.abs(f(x + h));
-  return !finite(l) || !finite(r) || (l > 1e4 && r > 1e4);
 }
 
 function dedupe(points: Feature[], tol: number): Feature[] {
@@ -143,36 +137,21 @@ function features1D(expr: Expression, varName = 'x'): Feature[] {
   return out;
 }
 
-function intersections(expr: Expression, others: Expression[]): Feature[] {
-  const { xmin, xmax } = getState().viewport;
-  const f = sampler(expr, 'x');
-  const found: Feature[] = [];
-  const N = 1500;
-  const dx = (xmax - xmin) / N;
-
-  for (const other of others) {
-    const g = sampler(other, 'x');
-    const diff = (x: number) => f(x) - g(x);
-    let prevX = xmin, prevD = diff(xmin);
-    for (let i = 1; i <= N; i++) {
-      const x = xmin + i * dx;
-      const d = diff(x);
-      if (finite(d) && d === 0) {
-        const y = f(x);
-        if (finite(y)) found.push({ type: 'intersection', with: other.id, x: +x.toFixed(6), y: +y.toFixed(6) });
-      } else if (finite(prevD) && finite(d) && prevD !== 0 && (prevD < 0) !== (d < 0)) {
-        if (!isPole(diff, (prevX + x) / 2, dx)) {
-          const r = bisect(diff, prevX, x);
-          const y = f(r);
-          if (finite(y) && Math.abs(diff(r)) < 1e-5) {
-            found.push({ type: 'intersection', with: other.id, x: +r.toFixed(6), y: +y.toFixed(6) });
-          }
-        }
-      }
-      prevX = x; prevD = d;
-    }
-  }
-  return found;
+/**
+ * Crossings involving this expression, taken from the same engine the board
+ * uses to draw its intersection markers and snap the cursor. Sharing it is the
+ * point: an agent asked "where do these meet?" must not get a different answer
+ * from the one the student can see on screen.
+ */
+function crossingFeatures(id: string): Feature[] {
+  return curveIntersections()
+    .filter((p) => p.a === id || p.b === id)
+    .map((p) => ({
+      type: 'intersection' as FeatureType,
+      x: +p.x.toFixed(6),
+      y: +p.y.toFixed(6),
+      with: p.a === id ? p.b : p.a,
+    }));
 }
 
 // Critical points of z = f(x,y): where the gradient vanishes. Classified by the
@@ -263,21 +242,41 @@ export function findFeatures(id: string): Result<{
 
   if (expr.kind === 'explicit_y' || expr.kind === 'explicit_x') {
     const varName = expr.kind === 'explicit_y' ? 'x' : 'y';
-    const others = state.expressions.filter(
-      (e) => e.id !== id && e.visible && !e.error && e.kind === expr.kind
-    );
-    const feats = [...features1D(expr, varName)];
-    if (expr.kind === 'explicit_y') feats.push(...intersections(expr, others));
     return {
       ok: true, id, kind: expr.kind,
       searched_region: { xmin: viewport.xmin, xmax: viewport.xmax },
-      features: feats,
+      features: [...features1D(expr, varName), ...crossingFeatures(id)],
       note: 'Only features inside the current viewport are found. Call set_viewport to widen the search.',
+    };
+  }
+
+  // A circle or a rose has no roots or turning points to report in the
+  // one-dimensional sense, but where it meets another curve is exactly the
+  // thing a student asks about -- so answer that rather than refusing.
+  if (expr.kind === 'implicit' || expr.kind === 'polar') {
+    return {
+      ok: true, id, kind: expr.kind,
+      searched_region: {
+        xmin: viewport.xmin, xmax: viewport.xmax,
+        ymin: viewport.ymin, ymax: viewport.ymax,
+      },
+      features: crossingFeatures(id),
+      note: `Crossings with other visible curves, inside the current viewport. Roots and turning points are not reported for a ${expr.kind} curve, because it is not a single-valued function of one variable.`,
+    };
+  }
+
+  if (expr.kind === 'point') {
+    const point = pointCoordinates(expr);
+    return {
+      ok: true, id, kind: expr.kind,
+      searched_region: { xmin: viewport.xmin, xmax: viewport.xmax },
+      features: point ? [{ type: 'point' as FeatureType, x: point.x, y: point.y }] : [],
+      note: 'A plotted point is already an exact coordinate; it is reported here unchanged.',
     };
   }
 
   return {
     ok: false,
-    error: `find_features supports y=f(x), x=g(y) and z=f(x,y). Expression "${id}" is kind "${expr.kind}".`,
+    error: `find_features cannot analyse expression "${id}" of kind "${expr.kind}".`,
   };
 }
