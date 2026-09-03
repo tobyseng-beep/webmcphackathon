@@ -26,6 +26,11 @@ export function subscribe(fn: Listener): () => void { listeners.add(fn); return 
 export function getState(): ChemState { return state; }
 export function atomById(id: string): Atom | undefined { return state.atoms.find((a) => a.id === id); }
 export function bondById(id: string): Bond | undefined { return state.bonds.find((b) => b.id === id); }
+function invalidateMessage(): boolean {
+  if (state.message === null) return false;
+  state.message = null;
+  return true;
+}
 
 // ---- undo / redo ----
 
@@ -99,7 +104,9 @@ export function addAtom(z: number, opts: AddAtomOptions = {}): { ok: boolean; id
   };
   state.atoms.push(atom);
   state.selectedId = atom.id; state.selectedBondId = null;
+  const messageChanged = invalidateMessage();
   notify('atoms');
+  if (messageChanged) notify('message');
   return { ok: true, id: atom.id };
 }
 
@@ -110,7 +117,9 @@ export function removeAtom(id: string): { ok: boolean; error?: string } {
   state.atoms.splice(idx, 1);
   state.bonds = state.bonds.filter((b) => b.a !== id && b.b !== id);
   if (state.selectedId === id) state.selectedId = null;
+  const messageChanged = invalidateMessage();
   notify('atoms');
+  if (messageChanged) notify('message');
   return { ok: true };
 }
 
@@ -120,9 +129,12 @@ function setParticle(id: string, field: 'protons' | 'neutrons' | 'electrons', va
   let v = Math.round(value);
   if (field === 'protons') { if (v < 1) v = 1; if (v > MAX_Z) v = MAX_Z; }
   else v = Math.max(0, v);
+  const elementChanged = field === 'protons' && atom.protons !== v;
   pushHistory(`${field}:${id}`);
   atom[field] = v;
+  const messageChanged = elementChanged && invalidateMessage();
   notify('atoms');
+  if (messageChanged) notify('message');
   return { ok: true };
 }
 export function setProtons(id: string, n: number) { return setParticle(id, 'protons', n); }
@@ -152,7 +164,9 @@ export function addBond(aId: string, bId: string, kind: BondKind = 'covalent', o
   const bond: Bond = { id: 'bond' + (++bondCounter), a: aId, b: bId, kind, order: kind === 'ionic' ? 1 : Math.max(1, Math.min(3, Math.round(order))) };
   state.bonds.push(bond);
   state.selectedBondId = bond.id; state.selectedId = null;
+  const messageChanged = invalidateMessage();
   notify('bonds');
+  if (messageChanged) notify('message');
   return { ok: true, id: bond.id };
 }
 
@@ -163,7 +177,9 @@ export function setBond(id: string, patch: { kind?: BondKind; order?: number }):
   if (patch.kind) bond.kind = patch.kind;
   if (patch.order !== undefined) bond.order = Math.max(1, Math.min(3, Math.round(patch.order)));
   if (bond.kind === 'ionic') bond.order = 1;
+  const messageChanged = invalidateMessage();
   notify('bonds');
+  if (messageChanged) notify('message');
   return { ok: true };
 }
 
@@ -173,7 +189,9 @@ export function removeBond(id: string): { ok: boolean; error?: string } {
   pushHistory(null);
   state.bonds.splice(idx, 1);
   if (state.selectedBondId === id) state.selectedBondId = null;
+  const messageChanged = invalidateMessage();
   notify('bonds');
+  if (messageChanged) notify('message');
   return { ok: true };
 }
 
@@ -182,7 +200,9 @@ export function clearAll(): { ok: true } {
   state.atoms = []; state.bonds = [];
   state.selectedId = null; state.selectedBondId = null;
   atomCounter = 0; bondCounter = 0;
+  const messageChanged = invalidateMessage();
   notify('atoms');
+  if (messageChanged) notify('message');
   return { ok: true };
 }
 

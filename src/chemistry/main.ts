@@ -271,13 +271,14 @@ function updateChrome(): void {
   undoBtn.disabled = !s.canUndo;
   redoBtn.disabled = !s.canRedo;
 
-  const mols = chem.molecules().filter((m) => m.atomIds.length > 1 || true);
-  const named = mols.filter((m) => m.atomIds.length > 1);
-  if (named.length > 0) {
+  const mols = chem.molecules();
+  const compound = mols.length === 1 ? mols[0] : null;
+  if (compound) {
     formulaBar.hidden = false;
-    formulaBar.innerHTML = named.map((m) => `<span class="formula-chip">${formulaHtml(m.formula, m.charge)}</span>`).join('');
+    formulaBar.innerHTML = `<span class="formula-chip">${formulaHtml(compound.formula, compound.charge)}</span>`;
   } else {
     formulaBar.hidden = true;
+    formulaBar.textContent = '';
   }
 
   structureWarning.hidden = analysis.valid;
