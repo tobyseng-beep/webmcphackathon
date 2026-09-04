@@ -110,7 +110,7 @@ export interface Preset {
 export interface JsonSchema {
   type: string;
   description?: string;
-  enum?: readonly string[];
+  enum?: readonly (string | number)[];
   properties?: Record<string, JsonSchema>;
   required?: readonly string[];
 }
