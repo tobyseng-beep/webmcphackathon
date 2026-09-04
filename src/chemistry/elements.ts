@@ -1,7 +1,6 @@
-// Periodic-table data for the atomic-structure sandbox. Periods 1-4 (H..Kr,
-// Z = 1..36), which covers essentially every element a Chem 1 course builds
-// atoms and compounds from. `group`/`period` place the cell in the periodic
-// table; `mass` sets the default neutron count of a fresh neutral atom.
+// Complete periodic-table data for the atomic-structure sandbox. `group` and
+// `period` place main-table cells; the UI expands the lanthanide and actinide
+// series into dedicated rows. `mass` sets a fresh atom's default neutron count.
 
 export type Category =
   | 'alkali'
@@ -11,7 +10,9 @@ export type Category =
   | 'metalloid'
   | 'nonmetal'
   | 'halogen'
-  | 'noble';
+  | 'noble'
+  | 'lanthanide'
+  | 'actinide';
 
 export interface Element {
   z: number;
@@ -20,7 +21,7 @@ export interface Element {
   mass: number; // standard atomic weight
   category: Category;
   group: number; // 1..18
-  period: number; // 1..4
+  period: number; // 1..7
 }
 
 export const ELEMENTS: Element[] = [
@@ -60,6 +61,88 @@ export const ELEMENTS: Element[] = [
   { z: 34, symbol: 'Se', name: 'Selenium', mass: 78.971, category: 'nonmetal', group: 16, period: 4 },
   { z: 35, symbol: 'Br', name: 'Bromine', mass: 79.904, category: 'halogen', group: 17, period: 4 },
   { z: 36, symbol: 'Kr', name: 'Krypton', mass: 83.798, category: 'noble', group: 18, period: 4 },
+  { z: 37, symbol: 'Rb', name: 'Rubidium', mass: 85.468, category: 'alkali', group: 1, period: 5 },
+  { z: 38, symbol: 'Sr', name: 'Strontium', mass: 87.62, category: 'alkaline', group: 2, period: 5 },
+  { z: 39, symbol: 'Y', name: 'Yttrium', mass: 88.906, category: 'transition', group: 3, period: 5 },
+  { z: 40, symbol: 'Zr', name: 'Zirconium', mass: 91.224, category: 'transition', group: 4, period: 5 },
+  { z: 41, symbol: 'Nb', name: 'Niobium', mass: 92.906, category: 'transition', group: 5, period: 5 },
+  { z: 42, symbol: 'Mo', name: 'Molybdenum', mass: 95.95, category: 'transition', group: 6, period: 5 },
+  { z: 43, symbol: 'Tc', name: 'Technetium', mass: 98, category: 'transition', group: 7, period: 5 },
+  { z: 44, symbol: 'Ru', name: 'Ruthenium', mass: 101.07, category: 'transition', group: 8, period: 5 },
+  { z: 45, symbol: 'Rh', name: 'Rhodium', mass: 102.906, category: 'transition', group: 9, period: 5 },
+  { z: 46, symbol: 'Pd', name: 'Palladium', mass: 106.42, category: 'transition', group: 10, period: 5 },
+  { z: 47, symbol: 'Ag', name: 'Silver', mass: 107.868, category: 'transition', group: 11, period: 5 },
+  { z: 48, symbol: 'Cd', name: 'Cadmium', mass: 112.414, category: 'transition', group: 12, period: 5 },
+  { z: 49, symbol: 'In', name: 'Indium', mass: 114.818, category: 'post-transition', group: 13, period: 5 },
+  { z: 50, symbol: 'Sn', name: 'Tin', mass: 118.71, category: 'post-transition', group: 14, period: 5 },
+  { z: 51, symbol: 'Sb', name: 'Antimony', mass: 121.76, category: 'metalloid', group: 15, period: 5 },
+  { z: 52, symbol: 'Te', name: 'Tellurium', mass: 127.6, category: 'metalloid', group: 16, period: 5 },
+  { z: 53, symbol: 'I', name: 'Iodine', mass: 126.904, category: 'halogen', group: 17, period: 5 },
+  { z: 54, symbol: 'Xe', name: 'Xenon', mass: 131.293, category: 'noble', group: 18, period: 5 },
+  { z: 55, symbol: 'Cs', name: 'Caesium', mass: 132.905, category: 'alkali', group: 1, period: 6 },
+  { z: 56, symbol: 'Ba', name: 'Barium', mass: 137.327, category: 'alkaline', group: 2, period: 6 },
+  { z: 57, symbol: 'La', name: 'Lanthanum', mass: 138.905, category: 'lanthanide', group: 3, period: 6 },
+  { z: 58, symbol: 'Ce', name: 'Cerium', mass: 140.116, category: 'lanthanide', group: 3, period: 6 },
+  { z: 59, symbol: 'Pr', name: 'Praseodymium', mass: 140.908, category: 'lanthanide', group: 3, period: 6 },
+  { z: 60, symbol: 'Nd', name: 'Neodymium', mass: 144.242, category: 'lanthanide', group: 3, period: 6 },
+  { z: 61, symbol: 'Pm', name: 'Promethium', mass: 145, category: 'lanthanide', group: 3, period: 6 },
+  { z: 62, symbol: 'Sm', name: 'Samarium', mass: 150.36, category: 'lanthanide', group: 3, period: 6 },
+  { z: 63, symbol: 'Eu', name: 'Europium', mass: 151.964, category: 'lanthanide', group: 3, period: 6 },
+  { z: 64, symbol: 'Gd', name: 'Gadolinium', mass: 157.25, category: 'lanthanide', group: 3, period: 6 },
+  { z: 65, symbol: 'Tb', name: 'Terbium', mass: 158.925, category: 'lanthanide', group: 3, period: 6 },
+  { z: 66, symbol: 'Dy', name: 'Dysprosium', mass: 162.5, category: 'lanthanide', group: 3, period: 6 },
+  { z: 67, symbol: 'Ho', name: 'Holmium', mass: 164.93, category: 'lanthanide', group: 3, period: 6 },
+  { z: 68, symbol: 'Er', name: 'Erbium', mass: 167.259, category: 'lanthanide', group: 3, period: 6 },
+  { z: 69, symbol: 'Tm', name: 'Thulium', mass: 168.934, category: 'lanthanide', group: 3, period: 6 },
+  { z: 70, symbol: 'Yb', name: 'Ytterbium', mass: 173.045, category: 'lanthanide', group: 3, period: 6 },
+  { z: 71, symbol: 'Lu', name: 'Lutetium', mass: 174.967, category: 'lanthanide', group: 3, period: 6 },
+  { z: 72, symbol: 'Hf', name: 'Hafnium', mass: 178.49, category: 'transition', group: 4, period: 6 },
+  { z: 73, symbol: 'Ta', name: 'Tantalum', mass: 180.948, category: 'transition', group: 5, period: 6 },
+  { z: 74, symbol: 'W', name: 'Tungsten', mass: 183.84, category: 'transition', group: 6, period: 6 },
+  { z: 75, symbol: 'Re', name: 'Rhenium', mass: 186.207, category: 'transition', group: 7, period: 6 },
+  { z: 76, symbol: 'Os', name: 'Osmium', mass: 190.23, category: 'transition', group: 8, period: 6 },
+  { z: 77, symbol: 'Ir', name: 'Iridium', mass: 192.217, category: 'transition', group: 9, period: 6 },
+  { z: 78, symbol: 'Pt', name: 'Platinum', mass: 195.084, category: 'transition', group: 10, period: 6 },
+  { z: 79, symbol: 'Au', name: 'Gold', mass: 196.967, category: 'transition', group: 11, period: 6 },
+  { z: 80, symbol: 'Hg', name: 'Mercury', mass: 200.592, category: 'transition', group: 12, period: 6 },
+  { z: 81, symbol: 'Tl', name: 'Thallium', mass: 204.38, category: 'post-transition', group: 13, period: 6 },
+  { z: 82, symbol: 'Pb', name: 'Lead', mass: 207.2, category: 'post-transition', group: 14, period: 6 },
+  { z: 83, symbol: 'Bi', name: 'Bismuth', mass: 208.98, category: 'post-transition', group: 15, period: 6 },
+  { z: 84, symbol: 'Po', name: 'Polonium', mass: 209, category: 'post-transition', group: 16, period: 6 },
+  { z: 85, symbol: 'At', name: 'Astatine', mass: 210, category: 'halogen', group: 17, period: 6 },
+  { z: 86, symbol: 'Rn', name: 'Radon', mass: 222, category: 'noble', group: 18, period: 6 },
+  { z: 87, symbol: 'Fr', name: 'Francium', mass: 223, category: 'alkali', group: 1, period: 7 },
+  { z: 88, symbol: 'Ra', name: 'Radium', mass: 226, category: 'alkaline', group: 2, period: 7 },
+  { z: 89, symbol: 'Ac', name: 'Actinium', mass: 227, category: 'actinide', group: 3, period: 7 },
+  { z: 90, symbol: 'Th', name: 'Thorium', mass: 232.038, category: 'actinide', group: 3, period: 7 },
+  { z: 91, symbol: 'Pa', name: 'Protactinium', mass: 231.036, category: 'actinide', group: 3, period: 7 },
+  { z: 92, symbol: 'U', name: 'Uranium', mass: 238.029, category: 'actinide', group: 3, period: 7 },
+  { z: 93, symbol: 'Np', name: 'Neptunium', mass: 237, category: 'actinide', group: 3, period: 7 },
+  { z: 94, symbol: 'Pu', name: 'Plutonium', mass: 244, category: 'actinide', group: 3, period: 7 },
+  { z: 95, symbol: 'Am', name: 'Americium', mass: 243, category: 'actinide', group: 3, period: 7 },
+  { z: 96, symbol: 'Cm', name: 'Curium', mass: 247, category: 'actinide', group: 3, period: 7 },
+  { z: 97, symbol: 'Bk', name: 'Berkelium', mass: 247, category: 'actinide', group: 3, period: 7 },
+  { z: 98, symbol: 'Cf', name: 'Californium', mass: 251, category: 'actinide', group: 3, period: 7 },
+  { z: 99, symbol: 'Es', name: 'Einsteinium', mass: 252, category: 'actinide', group: 3, period: 7 },
+  { z: 100, symbol: 'Fm', name: 'Fermium', mass: 257, category: 'actinide', group: 3, period: 7 },
+  { z: 101, symbol: 'Md', name: 'Mendelevium', mass: 258, category: 'actinide', group: 3, period: 7 },
+  { z: 102, symbol: 'No', name: 'Nobelium', mass: 259, category: 'actinide', group: 3, period: 7 },
+  { z: 103, symbol: 'Lr', name: 'Lawrencium', mass: 266, category: 'actinide', group: 3, period: 7 },
+  { z: 104, symbol: 'Rf', name: 'Rutherfordium', mass: 267, category: 'transition', group: 4, period: 7 },
+  { z: 105, symbol: 'Db', name: 'Dubnium', mass: 268, category: 'transition', group: 5, period: 7 },
+  { z: 106, symbol: 'Sg', name: 'Seaborgium', mass: 269, category: 'transition', group: 6, period: 7 },
+  { z: 107, symbol: 'Bh', name: 'Bohrium', mass: 270, category: 'transition', group: 7, period: 7 },
+  { z: 108, symbol: 'Hs', name: 'Hassium', mass: 269, category: 'transition', group: 8, period: 7 },
+  { z: 109, symbol: 'Mt', name: 'Meitnerium', mass: 278, category: 'transition', group: 9, period: 7 },
+  { z: 110, symbol: 'Ds', name: 'Darmstadtium', mass: 281, category: 'transition', group: 10, period: 7 },
+  { z: 111, symbol: 'Rg', name: 'Roentgenium', mass: 282, category: 'transition', group: 11, period: 7 },
+  { z: 112, symbol: 'Cn', name: 'Copernicium', mass: 285, category: 'transition', group: 12, period: 7 },
+  { z: 113, symbol: 'Nh', name: 'Nihonium', mass: 286, category: 'post-transition', group: 13, period: 7 },
+  { z: 114, symbol: 'Fl', name: 'Flerovium', mass: 289, category: 'post-transition', group: 14, period: 7 },
+  { z: 115, symbol: 'Mc', name: 'Moscovium', mass: 290, category: 'post-transition', group: 15, period: 7 },
+  { z: 116, symbol: 'Lv', name: 'Livermorium', mass: 293, category: 'post-transition', group: 16, period: 7 },
+  { z: 117, symbol: 'Ts', name: 'Tennessine', mass: 294, category: 'halogen', group: 17, period: 7 },
+  { z: 118, symbol: 'Og', name: 'Oganesson', mass: 294, category: 'noble', group: 18, period: 7 },
 ];
 
 export const CATEGORY_COLOR: Record<Category, string> = {
@@ -71,6 +154,8 @@ export const CATEGORY_COLOR: Record<Category, string> = {
   nonmetal: '#4ade80',
   halogen: '#facc15',
   noble: '#f472b6',
+  lanthanide: '#fb7185',
+  actinide: '#e879f9',
 };
 
 const BY_Z = new Map(ELEMENTS.map((e) => [e.z, e]));

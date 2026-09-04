@@ -18,6 +18,9 @@ const logEl = mustQuery<HTMLDivElement>('#log');
 const badge = mustQuery<HTMLDivElement>('#mcp-badge');
 const badgeText = mustQuery<HTMLSpanElement>('#mcp-text');
 const periodicEl = mustQuery<HTMLDivElement>('#periodic');
+const periodicDialog = mustQuery<HTMLDialogElement>('#periodic-dialog');
+const openPeriodicBtn = mustQuery<HTMLButtonElement>('#open-periodic');
+const closePeriodicBtn = mustQuery<HTMLButtonElement>('#close-periodic');
 const inspectorPanel = mustQuery<HTMLDivElement>('#inspector-panel');
 const emptyHint = mustQuery<HTMLDivElement>('#empty-hint');
 const formulaBar = mustQuery<HTMLDivElement>('#formula-bar');
@@ -98,40 +101,43 @@ initChemRender(canvas);
 
 /* ---------- periodic table ---------- */
 
-function startPaletteDrag(z: number, e: PointerEvent): void {
-  e.preventDefault();
-  const el = ELEMENTS.find((x) => x.z === z)!;
-  const ghost = document.createElement('div');
-  ghost.className = 'drag-ghost';
-  ghost.textContent = el.symbol;
-  ghost.style.background = CATEGORY_COLOR[el.category];
-  document.body.append(ghost);
-  const move = (ev: PointerEvent): void => { ghost.style.left = `${ev.clientX}px`; ghost.style.top = `${ev.clientY}px`; };
-  const up = (ev: PointerEvent): void => {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-    ghost.remove();
-    const grid = clientToGrid(ev.clientX, ev.clientY);
-    if (grid) chem.addAtom(z, { x: grid.x, y: grid.y });
-    else chem.addAtom(z);
-  };
-  move(e);
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
+function periodicPosition(z: number, group: number, period: number): { column: number; row: number } {
+  if (z >= 57 && z <= 71) return { column: z - 54, row: 9 };
+  if (z >= 89 && z <= 103) return { column: z - 86, row: 10 };
+  return { column: group, row: period };
+}
+
+function elementPlacement(): { x: number; y: number } | undefined {
+  const selectedId = chem.getState().selectedId;
+  const selected = selectedId ? chem.atomById(selectedId) : undefined;
+  if (selected) return { x: selected.x, y: selected.y };
+
+  const rect = canvas.getBoundingClientRect();
+  return clientToGrid(rect.left + rect.width / 2, rect.top + rect.height / 2) ?? undefined;
 }
 
 for (const el of ELEMENTS) {
+  const position = periodicPosition(el.z, el.group, el.period);
   const cell = document.createElement('button');
   cell.className = 'pt-cell';
   cell.type = 'button';
   cell.style.setProperty('--cat', CATEGORY_COLOR[el.category]);
-  cell.style.gridColumn = String(el.group);
-  cell.style.gridRow = String(el.period);
+  cell.style.gridColumn = String(position.column);
+  cell.style.gridRow = String(position.row);
   cell.title = `${el.name} (${el.symbol}), Z=${el.z}`;
   cell.innerHTML = `<span class="pt-z">${el.z}</span>${el.symbol}`;
-  cell.addEventListener('pointerdown', (e) => startPaletteDrag(el.z, e));
+  cell.addEventListener('click', () => {
+    chem.addAtom(el.z, elementPlacement());
+    periodicDialog.close();
+  });
   periodicEl.append(cell);
 }
+
+openPeriodicBtn.addEventListener('click', () => periodicDialog.showModal());
+closePeriodicBtn.addEventListener('click', () => periodicDialog.close());
+periodicDialog.addEventListener('click', (event) => {
+  if (event.target === periodicDialog) periodicDialog.close();
+});
 
 /* ---------- bond mode + undo/redo ---------- */
 

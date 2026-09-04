@@ -24,25 +24,55 @@
 
 /* ---- periodic table ---- */
 
+.periodic-launch { padding: .25rem .8rem .35rem; }
+.periodic-button {
+  width: 100%; border: 1px solid #c4b5fd; background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  color: #5b21b6; border-radius: 10px; padding: .75rem .9rem; cursor: pointer;
+  font: inherit; font-size: .84rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: .5rem;
+  transition: border-color .12s ease, box-shadow .12s ease, transform .08s ease;
+}
+.periodic-button:hover { border-color: #7c3aed; box-shadow: 0 4px 12px rgba(124,58,237,.15); }
+.periodic-button:active { transform: scale(.98); }
+.periodic-button-icon { font-size: 1.1rem; }
+
+.periodic-dialog {
+  width: min(1040px, 96vw); max-width: none; max-height: 92vh;
+  border: 1px solid var(--line); border-radius: 14px; padding: 0;
+  background: #fff; color: var(--ink); box-shadow: 0 24px 70px rgba(15,23,42,.28);
+}
+.periodic-dialog::backdrop { background: rgba(15,23,42,.48); backdrop-filter: blur(2px); }
+.periodic-dialog-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  padding: 1rem 1.1rem .75rem; border-bottom: 1px solid var(--line);
+}
+.periodic-dialog-head h2 { margin: 0; font-size: 1.05rem; }
+.periodic-dialog-head p { margin: .2rem 0 0; color: var(--muted); font-size: .78rem; }
+.periodic-close {
+  width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--muted); cursor: pointer; font: inherit; font-size: 1.3rem; line-height: 1;
+}
+.periodic-close:hover { border-color: #7c3aed; color: #7c3aed; }
+.periodic-scroll { overflow: auto; padding: 1rem; }
 .periodic {
   display: grid;
-  grid-template-columns: repeat(18, 1fr);
-  gap: 2px;
-  padding: 0 .8rem .4rem;
+  grid-template-columns: repeat(18, minmax(40px, 1fr));
+  grid-template-rows: repeat(7, 42px) 12px repeat(2, 42px);
+  gap: 4px;
+  min-width: 820px;
 }
 .pt-cell {
   position: relative;
-  aspect-ratio: 1 / 1;
   border: 0; border-radius: 3px;
-  cursor: grab; padding: 0;
+  cursor: pointer; padding: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: .62rem; font-weight: 700; color: #14203a;
+  font-size: .72rem; font-weight: 700; color: #14203a;
   background: var(--cat, #cbd5e1);
   transition: transform .08s ease, box-shadow .08s ease;
   touch-action: none;
 }
 .pt-cell:hover { transform: scale(1.18); box-shadow: 0 3px 10px rgba(16,24,40,.25); z-index: 2; }
-.pt-cell .pt-z { position: absolute; top: 1px; left: 2px; font-size: .42rem; font-weight: 600; opacity: .7; }
+.pt-cell .pt-z { position: absolute; top: 2px; left: 3px; font-size: .48rem; font-weight: 600; opacity: .7; }
 .palette-hint { font-size: .74rem; color: var(--muted); padding: .3rem .8rem .8rem; margin: 0; }
 
 .drag-ghost {

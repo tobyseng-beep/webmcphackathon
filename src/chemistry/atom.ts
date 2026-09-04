@@ -20,6 +20,14 @@ const SUBSHELLS: { shell: number; cap: number }[] = [
   { shell: 5, cap: 2 }, // 5s
   { shell: 4, cap: 10 }, // 4d
   { shell: 5, cap: 6 }, // 5p
+  { shell: 6, cap: 2 }, // 6s
+  { shell: 4, cap: 14 }, // 4f
+  { shell: 5, cap: 10 }, // 5d
+  { shell: 6, cap: 6 }, // 6p
+  { shell: 7, cap: 2 }, // 7s
+  { shell: 5, cap: 14 }, // 5f
+  { shell: 6, cap: 10 }, // 6d
+  { shell: 7, cap: 6 }, // 7p
 ];
 
 /** Electrons per principal shell, innermost first. */
@@ -32,7 +40,7 @@ export function shells(electrons: number): number[] {
     perShell[sub.shell] = (perShell[sub.shell] ?? 0) + put;
     e -= put;
   }
-  if (e > 0) perShell[6] = (perShell[6] ?? 0) + e; // overflow safety
+  if (e > 0) perShell[8] = (perShell[8] ?? 0) + e; // overflow safety
   const maxShell = Object.keys(perShell).length ? Math.max(...Object.keys(perShell).map(Number)) : 0;
   const out: number[] = [];
   for (let i = 1; i <= maxShell; i++) out.push(perShell[i] ?? 0);

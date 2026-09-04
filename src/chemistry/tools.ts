@@ -71,7 +71,7 @@ const toolDefinitions = [
   {
     name: 'list_elements',
     description:
-      'List the elements available in the periodic table (hydrogen through krypton, atomic numbers 1 to 36), with symbol, name, category and typical mass. Use it to pick an element or recall an atomic number before adding an atom.',
+      'List all 118 elements in the periodic table (hydrogen through oganesson), with symbol, name, category and typical mass. Use it to pick an element or recall an atomic number before adding an atom.',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => ({
       ok: true,
@@ -109,7 +109,7 @@ const toolDefinitions = [
   {
     name: 'set_protons',
     description:
-      'Change an atom\'s proton count. This changes which element it is (protons ARE the element). Range 1 to 36. A powerful teaching move: add a proton to lithium and watch it become beryllium. The electron and neutron counts stay put, so the charge may change until you adjust them.',
+      'Change an atom\'s proton count. This changes which element it is (protons ARE the element). Range 1 to 118. A powerful teaching move: add a proton to lithium and watch it become beryllium. The electron and neutron counts stay put, so the charge may change until you adjust them.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, count: { type: 'number' } }, required: ['id', 'count'] },
     execute: async (args: Record<string, unknown>) => {
       const r = chem.setProtons(String(args.id), Number(args.count));
@@ -146,7 +146,7 @@ const toolDefinitions = [
         a: { type: 'string', description: 'First atom id.' },
         b: { type: 'string', description: 'Second atom id.' },
         kind: { type: 'string', enum: ['covalent', 'ionic'] },
-        order: { type: 'number', enum: ['1', '2', '3'], description: 'Covalent bond order.' },
+        order: { type: 'number', enum: [1, 2, 3], description: 'Covalent bond order.' },
       },
       required: ['a', 'b'],
     },
@@ -166,7 +166,7 @@ const toolDefinitions = [
       properties: {
         id: { type: 'string' },
         kind: { type: 'string', enum: ['covalent', 'ionic'] },
-        order: { type: 'number', enum: ['1', '2', '3'] },
+        order: { type: 'number', enum: [1, 2, 3] },
       },
       required: ['id'],
     },

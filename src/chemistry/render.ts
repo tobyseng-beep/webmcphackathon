@@ -382,7 +382,9 @@ export function suggestBondKind(aId: string, bId: string): BondKind {
   const a = chem.atomById(aId), b = chem.atomById(bId);
   const catA = a ? elementByZ(a.protons)?.category : undefined;
   const catB = b ? elementByZ(b.protons)?.category : undefined;
-  const metal = (c?: string) => c === 'alkali' || c === 'alkaline' || c === 'transition' || c === 'post-transition';
+  const metal = (c?: string) =>
+    c === 'alkali' || c === 'alkaline' || c === 'transition' || c === 'post-transition' ||
+    c === 'lanthanide' || c === 'actinide';
   const nonmetal = (c?: string) => c === 'nonmetal' || c === 'halogen';
   if ((metal(catA) && nonmetal(catB)) || (metal(catB) && nonmetal(catA))) return 'ionic';
   return 'covalent';

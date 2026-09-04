@@ -307,7 +307,8 @@ function hillFormula(counts: Map<string, number>): string {
   } else {
     const isMetal = (sym: string): boolean => {
       const c = elementBySymbol(sym)?.category;
-      return c === 'alkali' || c === 'alkaline' || c === 'transition' || c === 'post-transition';
+      return c === 'alkali' || c === 'alkaline' || c === 'transition' || c === 'post-transition' ||
+        c === 'lanthanide' || c === 'actinide';
     };
     ordered = syms.sort((a, b) => {
       const ma = isMetal(a) ? 0 : 1, mb = isMetal(b) ? 0 : 1;

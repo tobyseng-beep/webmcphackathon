@@ -42,8 +42,13 @@
   <aside class="sidebar">
     <section class="panel">
       <div class="panel-head"><h2>Periodic table</h2></div>
-      <div id="periodic" class="periodic"></div>
-      <p class="palette-hint">Drag an element onto the board (or click it). Drag atoms to move; turn on Bond mode and click two atoms to bond them.</p>
+      <div class="periodic-launch">
+        <button id="open-periodic" class="periodic-button" type="button">
+          <span class="periodic-button-icon">⚛</span>
+          Choose an element
+        </button>
+      </div>
+      <p class="palette-hint">Open the complete periodic table to add any element. Drag atoms to move them; use Bond mode to connect them.</p>
     </section>
 
     <section class="panel">
@@ -88,6 +93,19 @@
     </details>
   </aside>
 </main>
+
+<dialog id="periodic-dialog" class="periodic-dialog" aria-labelledby="periodic-title">
+  <div class="periodic-dialog-head">
+    <div>
+      <h2 id="periodic-title">Periodic table</h2>
+      <p>Choose an element to add it to the board.</p>
+    </div>
+    <button id="close-periodic" class="periodic-close" type="button" aria-label="Close periodic table">×</button>
+  </div>
+  <div class="periodic-scroll">
+    <div id="periodic" class="periodic"></div>
+  </div>
+</dialog>
 
 <script type="module" src="/src/chemistry/main.ts"></script>
 </body>
